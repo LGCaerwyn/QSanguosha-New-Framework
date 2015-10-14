@@ -4,10 +4,11 @@ import Cardirector.Device 1.0
 
 Item {
     property int cid: 0
-    property string suit: "heart"
-    property int number: 2
+    property string suit: ""
+    property int number: 0
     property string name: "slash"
     readonly property string color: (suit == "heart" || suit == "diamond") ? "red" : "black"
+    property int subtype: 0
     property int homeX: 0
     property int homeY: 0
     property real homeOpacity: 1.0
@@ -28,7 +29,7 @@ Item {
     signal released()
     signal entered()
     signal exited()
-    signal movementAnimationFinished()
+    signal moveFinished()
     signal generalChanged()
     signal hoverChanged(bool enter)
 
@@ -154,7 +155,7 @@ Item {
             duration: goBackDuration
         }
 
-        onStopped: root.movementAnimationFinished();
+        onStopped: root.moveFinished();
     }
 
     function setData(data)
@@ -163,6 +164,7 @@ Item {
         name = data.name;
         suit = data.suit;
         number = data.number;
+        subtype = data.subtype;
     }
 
     function toData()
@@ -171,7 +173,8 @@ Item {
             cid: cid,
             name: name,
             suit: suit,
-            number: number
+            number: number,
+            subtype: subtype
         };
         return data;
     }
@@ -184,19 +187,15 @@ Item {
         } else {
             x = homeX;
             y = homeY;
+            opacity = homeOpacity;
         }
     }
 
     function destroyOnStop()
     {
-        root.movementAnimationFinished.connect(function(){
+        root.moveFinished.connect(function(){
             destroy();
         });
-    }
-
-    Component.onCompleted: {
-        x = homeX;
-        y = homeY;
     }
 }
 

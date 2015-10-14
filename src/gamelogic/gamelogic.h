@@ -44,6 +44,7 @@ public:
     void setPackages(const QList<const Package *> &packages) { m_packages = packages; }
 
     void addEventHandler(const EventHandler *handler);
+    void removeEventHandler(const EventHandler *handler);
     bool trigger(EventType event, ServerPlayer *target);
     bool trigger(EventType event, ServerPlayer *target, QVariant &data);
 
@@ -64,15 +65,25 @@ public:
     bool isGlobalRequestEnabled() const { return m_globalRequestEnabled; }
     bool skipGameRule() const { return m_skipGameRule; }
 
+    Card *getDrawPileCard();
+    QList<Card *> getDrawPileCards(int n);
+    void reshuffleDrawPile();
+    int reshufflingCount() const { return m_reshufflingCount; }
+
     const CardArea *drawPile() const { return m_drawPile; }
     const CardArea *discardPile() const { return m_discardPile; }
     const CardArea *table() const { return m_table; }
+    const CardArea *wugu() const { return m_wugu; }
 
     void moveCards(const CardsMoveStruct &move);
-    void moveCards(QList<CardsMoveStruct> moves);
+    void moveCards(QList<CardsMoveStruct> &moves);
 
     bool useCard(CardUseStruct &use);
     bool takeCardEffect(CardEffectStruct &effect);
+
+    void respondCard(CardResponseStruct &response);
+
+    void judge(JudgeStruct &judge);
 
     Card *findCard(uint id) const { return m_cards.value(id); }
     QList<Card *> findCards(const QVariant &data);
@@ -80,7 +91,7 @@ public:
     void damage(DamageStruct &damage);
     void recover(RecoverStruct &recover);
 
-    void delay(ulong msecs);
+    void killPlayer(ServerPlayer *victim, DamageStruct *damage = nullptr);
 
 protected:
     CAbstractPlayer *createPlayer(CServerUser *user);
@@ -88,6 +99,7 @@ protected:
 
     void prepareToStart();
     CardArea *findArea(const CardsMoveStruct::Area &area);
+    void filterCardsMove(QList<CardsMoveStruct> &moves);
 
     void run();
 
@@ -102,10 +114,12 @@ private:
     bool m_globalRequestEnabled;
     bool m_skipGameRule;
     int m_round;
+    int m_reshufflingCount;
 
     CardArea *m_drawPile;
     CardArea *m_discardPile;
     CardArea *m_table;
+    CardArea *m_wugu;
 
     QMap<Card *, CardArea *> m_cardPosition;
 };

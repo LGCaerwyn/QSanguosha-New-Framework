@@ -13,6 +13,10 @@ RowLayout {
     property alias hp: hpBar.value
     property alias maxHp: hpBar.maxValue
     property string phase: "inactive"
+    property bool chained: false
+    property bool dying: false
+    property bool alive: true
+    property bool drunk: false
     property bool selectable: false
     property bool selected: false
 
@@ -21,6 +25,7 @@ RowLayout {
     property alias finishButton: finishButtonItem
     property alias handcardArea: handcardAreaItem
     property alias equipArea: equipAreaItem
+    property alias delayedTrickArea: delayedTrickAreaItem
     property alias progressBar: progressBarItem
 
     signal accepted()
@@ -32,25 +37,14 @@ RowLayout {
     Layout.fillHeight: false
     Layout.preferredHeight: Device.gu(150)
 
-    ImageProvider {
-        id: roomSceneImage
-        providerId: "dashboard"
-
-        function imagePath(imageId, requestedSize)
-        {
-            return "image/dashboard/" + imageId + ".png";
-        }
-    }
-
-    Image {
+    EquipArea {
         id: equipAreaItem
-        source: "image://dashboard/equip"
         Layout.preferredWidth: Device.gu(164)
         Layout.fillHeight: true
     }
 
-    Image {
-        source: "image://dashboard/hand"
+    Rectangle {
+        color: Qt.rgba(0, 0, 0, 0.65)
         Layout.fillWidth: true
         Layout.fillHeight: true
 
@@ -65,7 +59,15 @@ RowLayout {
                     id: handcardAreaItem
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    Layout.topMargin: Device.gu(5)
+                    Layout.topMargin: Device.gu(15)
+
+                    DelayedTrickArea {
+                        id: delayedTrickAreaItem
+                        width: parent.width
+                        height: Device.gu(30)
+                        rows: 1
+                        y: -height
+                    }
 
                     ProgressBar {
                         id: progressBarItem
@@ -104,7 +106,7 @@ RowLayout {
 
             Image {
                 id: platter
-                source: "image://dashboard/platter"
+                source: "image://root/dashboard/platter"
 
                 IrregularButton {
                     id: acceptButtonItem
@@ -145,7 +147,7 @@ RowLayout {
                 Image {
                     x: Device.gu(71)
                     y: Device.gu(117)
-                    source: seatNumber > 0 ? "image://dashboard/seatnum/" + seatNumber : ""
+                    source: seatNumber > 0 ? "image://root/dashboard/seatnum/" + seatNumber : ""
                     visible: seatNumber > 0
                 }
             }
@@ -157,11 +159,11 @@ RowLayout {
         height: Device.gu(149)
 
         Image {
-            source: "image://dashboard/base"
+            source: "image://root/dashboard/base"
         }
 
         Image {
-            source: "image://dashboard/hpbase"
+            source: "image://root/dashboard/hpbase"
             anchors.bottom: parent.bottom
             anchors.left: deputyGeneralItem.right
 
@@ -177,7 +179,7 @@ RowLayout {
         }
 
         Image {
-            source: "image://dashboard/avatarbg"
+            source: "image://root/dashboard/avatarbg"
         }
 
         GeneralAvatar {
@@ -186,6 +188,18 @@ RowLayout {
             avatar: headGeneralName ? headGeneralName: "huangyueying"
             generalName: qsTr(headGeneralName)
             generalPosition: "head"
+
+            Rectangle {
+                color: Qt.rgba(250, 0, 0, 0.45)
+                anchors.fill: parent
+                visible: root.drunk
+            }
+
+            SkillPanel {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: Device.gu(3)
+            }
         }
 
         GeneralAvatar {
@@ -195,6 +209,25 @@ RowLayout {
             avatar: deputyGeneralName ? deputyGeneralName : "zhugeliang"
             generalName: qsTr(deputyGeneralName)
             generalPosition: "deputy"
+
+            Rectangle {
+                color: Qt.rgba(250, 0, 0, 0.45)
+                anchors.fill: parent
+                visible: root.drunk
+            }
+
+            SkillPanel {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: Device.gu(3)
+            }
+        }
+
+        Image {
+            source: "image://root/chain"
+            visible: root.chained
+            anchors.horizontalCenter: headGeneralItem.right
+            anchors.verticalCenter: headGeneralItem.verticalCenter
         }
     }
 }

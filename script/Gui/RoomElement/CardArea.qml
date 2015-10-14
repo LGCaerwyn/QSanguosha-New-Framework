@@ -27,6 +27,7 @@ Item {
                     result.push(cards[i]);
                     cards.splice(i, 1);
                     i--;
+                    break;
                 }
             }
         }
@@ -66,7 +67,6 @@ Item {
             card.homeX += parentPos.x;
             card.homeY += parentPos.y;
         }
-
 
         if (animated) {
             for (i = 0; i < cards.length; i++)

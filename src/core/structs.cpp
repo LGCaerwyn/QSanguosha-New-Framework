@@ -19,6 +19,7 @@
 
 #include "card.h"
 #include "player.h"
+#include "serverplayer.h"
 #include "structs.h"
 
 CardsMoveStruct::Area::Area()
@@ -80,6 +81,7 @@ CardUseStruct::CardUseStruct()
     : from(nullptr)
     , card(nullptr)
     , target(nullptr)
+    , isNullified(false)
     , isOwnerUse(true)
     , addHistory(true)
     , isHandcard(true)
@@ -87,13 +89,10 @@ CardUseStruct::CardUseStruct()
 {
 }
 
-CardEffectStruct::CardEffectStruct()
-    : card(nullptr)
-    , target(nullptr)
-    , from(nullptr)
+CardEffectStruct::CardEffectStruct(CardUseStruct &use)
+    : use(use)
+    , from(use.from)
     , to(nullptr)
-    , multiple(false)
-    , nullified(false)
 {
 }
 
@@ -110,11 +109,37 @@ DamageStruct::DamageStruct()
 {
 }
 
-
 RecoverStruct::RecoverStruct()
     : from(nullptr)
     , to(nullptr)
     , recover(1)
     , card(nullptr)
+{
+}
+
+CardResponseStruct::CardResponseStruct()
+    : from(nullptr)
+    , to(nullptr)
+    , card(nullptr)
+    , target(nullptr)
+{
+}
+
+JudgeStruct::JudgeStruct(const QString &pattern)
+    : who(nullptr)
+    , card(nullptr)
+    , matched(false)
+    , m_pattern(pattern)
+{
+}
+
+void JudgeStruct::updateResult()
+{
+    matched = m_pattern.match(who, card);
+}
+
+DeathStruct::DeathStruct()
+    : who(nullptr)
+    , damage(nullptr)
 {
 }

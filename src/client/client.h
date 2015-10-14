@@ -38,6 +38,7 @@ public:
     ~Client();
 
     const ClientPlayer *findPlayer(CClientUser *user) const;
+    const ClientPlayer *selfPlayer() const { return m_user2player.value(self()); }
     QList<const ClientPlayer *> players() const;
     int playerNum() const;
 
@@ -45,15 +46,24 @@ public:
     void useCard(const Card *card, const QList<const Player *> &targets);
     void respondCard(const QList<const Card *> &cards);
 
+    const CardArea *wugu() const { return m_wugu; }
+
 signals:
+    void promptReceived(const QString &prompt);
     void seatArranged();
     void chooseGeneralRequested(const QStringList &candidates /* @to-do: add banned pair */);
     void cardsMoved(const QList<CardsMoveStruct> &moves);
     void damageDone(const ClientPlayer *victim, DamageStruct::Nature nature, int damage);
     void recoverDone(const ClientPlayer *from, const ClientPlayer *to, int num);
-    void usingCard(const QString &pattern);
+    void usingCard(const QString &pattern, const QList<const Player *> &assignedTarget);
     void cardUsed(const ClientPlayer *from, const QList<const ClientPlayer *> &to);
-    void cardAsked(const QString &pattern, const QString &prompt);
+    void cardAsked(const QString &pattern);
+    void cardsAsked(const QString &pattern, int minNum, int maxNum, bool optional);
+    void amazingGraceStarted();
+    void amazingGraceFinished();
+    void amazingGraceRequested();
+    void choosePlayerCardRequested(const QList<Card *> &handcards, const QList<Card *> &equips, const QList<Card *> &delayedTricks);
+    void cardShown(const ClientPlayer *from, const QList<const Card *> &cards);
 
 private:
     Client(QObject *parent = 0);
@@ -61,8 +71,12 @@ private:
     void restart();
     ClientPlayer *findPlayer(uint id) { return m_players.value(id); }
     CardArea *findArea(const CardsMoveStruct::Area &area);
+    QList<Card *> findCards(const QVariant &data);
+    static inline QString tr(const QString &text) { return tr(text.toLatin1().constData()); }
 
     C_DECLARE_INITIALIZER(Client)
+
+    static void ShowPromptCommand(QObject *receiver, const QVariant &data);
     static void ArrangeSeatCommand(QObject *receiver, const QVariant &data);
     static void PrepareCardsCommand(QObject *receiver, const QVariant &data);
     static void UpdatePlayerPropertyCommand(QObject *receiver, const QVariant &data);
@@ -74,10 +88,17 @@ private:
     static void DamageCommand(QObject *receiver, const QVariant &data);
     static void RecoverCommand(QObject *receiver, const QVariant &data);
     static void AskForCardRequestCommand(QObject *receiver, const QVariant &data);
+    static void ShowAmazingGraceCommand(QObject *receiver, const QVariant &);
+    static void ClearAmazingGraceCommand(QObject *receiver, const QVariant &);
+    static void TakeAmazingGraceRequestCommand(QObject *receiver, const QVariant &data);
+    static void ChoosePlayerCardRequestCommand(QObject *receiver, const QVariant &data);
+    static void ShowCardCommand(QObject *receiver, const QVariant &data);
 
     QMap<uint, ClientPlayer *> m_players;
     QMap<CClientUser *, ClientPlayer *> m_user2player;
     QMap<uint, Card *> m_cards;//Record card state
+
+    CardArea *m_wugu;
 };
 
 #endif // CLIENT_H

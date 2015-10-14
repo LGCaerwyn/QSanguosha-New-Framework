@@ -21,6 +21,7 @@
 #define STRUCTS_H
 
 #include "cardarea.h"
+#include "cardpattern.h"
 #include "player.h"
 
 #include <QList>
@@ -82,6 +83,7 @@ struct CardUseStruct
     Card *card;
     Card *target;
     QList<ServerPlayer *> nullifiedList;
+    bool isNullified;
     bool isOwnerUse;
     bool addHistory;
     bool isHandcard;
@@ -95,15 +97,14 @@ Q_DECLARE_METATYPE(CardUseStruct *)
 
 struct CardEffectStruct
 {
-    Card *card;
-    Card *target;
-    ServerPlayer *from;
+    CardUseStruct &use;
+    ServerPlayer *&from;
     ServerPlayer *to;
-    bool multiple;  //It's true iff the card has more than 1 target
-    bool nullified; //Does not make sense if it's a skill card
-    QVariant extra;
 
-    CardEffectStruct();
+    CardEffectStruct(CardUseStruct &use);
+    bool isNullified() const {
+        return use.isNullified || (to && use.nullifiedList.contains(to));
+    }
 };
 
 Q_DECLARE_METATYPE(CardEffectStruct *)
@@ -145,5 +146,42 @@ struct RecoverStruct
 };
 
 Q_DECLARE_METATYPE(RecoverStruct *)
+
+struct CardResponseStruct
+{
+    ServerPlayer *from;
+    ServerPlayer *to;
+    Card *card;
+    Card *target;
+
+    CardResponseStruct();
+};
+
+Q_DECLARE_METATYPE(CardResponseStruct *)
+
+struct JudgeStruct
+{
+    ServerPlayer *who;
+    Card *card;
+    bool matched;
+
+    JudgeStruct(const QString &pattern);
+    void updateResult();
+
+private:
+    CardPattern m_pattern;
+};
+
+Q_DECLARE_METATYPE(JudgeStruct *)
+
+struct DeathStruct
+{
+    ServerPlayer *who;
+    DamageStruct *damage;
+
+    DeathStruct();
+};
+
+Q_DECLARE_METATYPE(DeathStruct *)
 
 #endif // STRUCTS_H

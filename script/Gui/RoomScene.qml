@@ -16,22 +16,16 @@ RoomScene {
     id: roomScene
     anchors.fill: parent
 
-    CSound {
-        id: backgroundMusic
-        source: config.backgroundMusic
-        Component.onCompleted: play();
+    FontLoader {
+        source: "../../font/simli.ttf"
     }
 
-    CSound {
-        id: soundEffect
+    Sound {
+        id: backgroundMusic
+    }
 
-        Connections {
-            target: roomScene
-            onPlayAudio: {
-                soundEffect.source = "audio/" + path;
-                soundEffect.play();
-            }
-        }
+    Sound {
+        id: soundEffect
     }
 
     Image {
@@ -43,16 +37,6 @@ RoomScene {
     MouseArea {
         anchors.fill: parent
         onPressed: parent.forceActiveFocus();
-    }
-
-    ImageProvider {
-        id: generalImage
-        providerId: "general"
-
-        function imagePath(imageId, requestedSize)
-        {
-            return "image/general/" + imageId + ".png";
-        }
     }
 
     ColumnLayout {
@@ -82,6 +66,12 @@ RoomScene {
                             deputyGeneral: modelData.deputyGeneralName
                             phase: modelData.phase
                             seat: modelData.seat
+                            chained: modelData.chained
+                            dying: modelData.dying
+                            alive: modelData.alive
+                            drunk: modelData.drunk
+
+                            onSelectedChanged: roomScene.onPhotoSelected(roomScene.getSelectedSeats());
                         }
                     }
 
@@ -132,7 +122,20 @@ RoomScene {
         Dashboard {
             id: dashboard
 
-            onAccepted: roomScene.accepted();
+            onAccepted: {
+                closeDialog();
+                roomScene.onAccepted();
+            }
+
+            onRejected: {
+                closeDialog();
+                roomScene.onRejected();
+            }
+
+            onFinished: {
+                closeDialog();
+                roomScene.onFinished();
+            }
 
             Connections {
                 target: roomScene
@@ -145,11 +148,15 @@ RoomScene {
                     dashboard.headGeneralName = Qt.binding(function(){return model.headGeneralName});
                     dashboard.deputyGeneralName = Qt.binding(function(){return model.deputyGeneralName});
                     dashboard.headGeneralKingdom = dashboard.deputyGeneralKingdom = Qt.binding(function(){return model.kingdom});
+                    dashboard.chained = Qt.binding(function(){return model.chained;});
+                    dashboard.dying = Qt.binding(function(){return model.dying;});
+                    dashboard.alive = Qt.binding(function(){return model.alive;});
+                    dashboard.drunk = Qt.binding(function(){return model.drunk;});
                 }
 
-                onSetAcceptEnabled: acceptButton.enabled = enabled;
-                onSetRejectEnabled: rejectButton.enabled = enabled;
-                onSetFinishEnabled: finishButton.enabled = enabled;
+                onSetAcceptEnabled: dashboard.acceptButton.enabled = enabled;
+                onSetRejectEnabled: dashboard.rejectButton.enabled = enabled;
+                onSetFinishEnabled: dashboard.finishButton.enabled = enabled;
             }
 
             Connections {
@@ -159,7 +166,7 @@ RoomScene {
                     var cards = dashboard.handcardArea.getSelectedCards();
                     for (var i = 0; i < cards.length; i++)
                         ids.push(cards[i].cid);
-                    roomScene.cardSelected(ids);
+                    roomScene.onCardSelected(ids);
                 }
             }
         }
@@ -167,6 +174,7 @@ RoomScene {
 
     Loader {
         id: popupBox
+        z: 1000
         onSourceChanged: {
             if (item === null)
                 return;
@@ -189,11 +197,21 @@ RoomScene {
         }
     }
 
+    Prompt {
+        id: promptBox
+        x: Math.round((roomArea.width - width) / 2)
+        y: Math.round(roomArea.height * 0.67 - height / 2);
+        z: 1000
+        visible: false
+
+        onFinished: visible = false;
+    }
+
     onChooseGeneral: {
         popupBox.source = "RoomElement/ChooseGeneralBox.qml";
         var box = popupBox.item;
         box.accepted.connect(function(){
-            roomScene.chooseGeneralFinished(box.headGeneral, box.deputyGeneral);
+            roomScene.onChooseGeneralFinished(box.headGeneral, box.deputyGeneral);
         });
         for (var i = 0; i < generals.length; i++)
             box.model.append(generals[i]);
@@ -201,8 +219,7 @@ RoomScene {
     }
 
     onMoveCards: {
-        var cardItems = [], i;
-        for (i = 0; i < moves.length; i++) {
+        for (var i = 0; i < moves.length; i++) {
             var move = moves[i];
             var from = getAreaItem(move.from);
             var to = getAreaItem(move.to);
@@ -228,22 +245,74 @@ RoomScene {
 
     onEnableCards: {
         dashboard.handcardArea.enableCards(cardIds);
-        for (var i = 0; i < photos.count; i++)
-            photos.itemAt(i).state = cardIds.length === 1 ? "candidate" : "normal";
+        for (var i = 0; i < photos.count; i++) {
+            var photo = photos.itemAt(i);
+            if (cardIds.length === 1) {
+                photo.state = "candidate";
+            } else {
+                photo.state = "normal";
+                photo.selectable = photo.selected = false;
+            }
+        }
     }
 
     onEnablePhotos: {
-        var photo, i;
-        for (i = 0; i < photos.count; i++) {
-            photo = photos.itemAt(i);
-            photo.selectable = photo.selected = false;
+        for (var i = 0; i < photos.count; i++) {
+            var photo = photos.itemAt(i);
+            if (!photo.selected)
+                photo.selectable = seats.contains(photo.seat);
         }
+        if (!dashboard.selected)
+            dashboard.selectable = seats.contains(dashboard.seatNumber);
+    }
 
-        for (i  = 0; i < seats.length; i++) {
-            var seat = seats[i];
-            photo = getItemBySeat(seat);
-            photo.selectable = true;
+    onPlayAudio: {
+        soundEffect.source = "audio/" + path;
+        soundEffect.play();
+    }
+
+    onShowPrompt: {
+        promptBox.text = prompt;
+        promptBox.visible = true;
+    }
+
+    onHidePrompt: {
+        promptBox.visible = false;
+    }
+
+    onAskToChooseCards: {
+        popupBox.source = "RoomElement/ChooseCardBox.qml";
+        popupBox.item.addCards(cards);
+        popupBox.moveToCenter();
+        popupBox.item.cardSelected.connect(function(cid){
+            roomScene.onAmazingGraceTaken(cid);
+        });
+    }
+
+    onAskToChoosePlayerCard: {
+        popupBox.source = "RoomElement/PlayerCardBox.qml";
+        popupBox.item.addHandcards(handcards);
+        popupBox.item.addEquips(equips);
+        popupBox.item.addDelayedTricks(delayedTricks);
+        popupBox.moveToCenter();
+        popupBox.item.cardSelected.connect(function(cid){
+            roomScene.onPlayerCardSelected(cid);
+        });
+    }
+
+    onShowCard: {
+        if (cards.length === 1) {
+            var photo = getItemBySeat(fromSeat);
+            var items = photo.remove(cards);
+            tablePile.add(items);
+            tablePile.updateCardPosition(true);
+        } else if (cards.length > 1) {
+            //@to-do: skills like Gongxin show multiple cards
         }
+    }
+
+    onClearPopupBox: {
+        popupBox.source = "";
     }
 
     onPlayerNumChanged: arrangePhotos();
@@ -372,6 +441,8 @@ RoomScene {
             return drawPile;
         } else if (area.type === "table") {
             return tablePile;
+        } else if (area.type === "wugu") {
+            return popupBox.item;
         }
 
         var photo = getItemBySeat(area.seat);
@@ -397,5 +468,15 @@ RoomScene {
                 selected.push(photo.seat);
         }
         return selected;
+    }
+
+    //@to-do: hide the latest dialog. We need a better solution
+    function closeDialog()
+    {
+        if (promptBox.visible) {
+            promptBox.visible = false;
+        } else {
+            popupBox.source = "";
+        }
     }
 }

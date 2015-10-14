@@ -18,8 +18,122 @@
 *********************************************************************/
 
 #include "standardpackage.h"
-#include "card.h"
+#include "standard-equipcard.h"
+
+Crossbow::Crossbow(Card::Suit suit, int number)
+    : Weapon(suit, number)
+{
+    setObjectName("crossbow");
+    m_attackRange = 1;
+}
+
+DoubleSword::DoubleSword(Card::Suit suit, int number)
+    : Weapon(suit, number)
+{
+    setObjectName("double_sword");
+    m_attackRange = 2;
+}
+
+QinggangSword::QinggangSword(Card::Suit suit, int number)
+    : Weapon(suit, number)
+{
+    setObjectName("qinggang_sword");
+    m_attackRange = 2;
+}
+
+IceSword::IceSword(Card::Suit suit, int number)
+    : Weapon(suit, number)
+{
+    setObjectName("ice_sword");
+    m_attackRange = 2;
+}
+
+SixSwords::SixSwords(Card::Suit suit, int number)
+    : Weapon(suit, number)
+{
+    setObjectName("six_swords");
+    m_attackRange = 2;
+}
+
+Spear::Spear(Card::Suit suit, int number)
+    : Weapon(suit, number)
+{
+    setObjectName("spear");
+    m_attackRange = 3;
+}
+
+Axe::Axe(Card::Suit suit, int number)
+    : Weapon(suit, number)
+{
+    setObjectName("axe");
+    m_attackRange = 3;
+}
+
+Triblade::Triblade(Card::Suit suit, int number)
+    : Weapon(suit, number)
+{
+    setObjectName("triblade");
+    m_attackRange = 3;
+}
+
+KylinBow::KylinBow(Card::Suit suit, int number)
+    : Weapon(suit, number)
+{
+    setObjectName("kylin_bow");
+    m_attackRange = 5;
+}
+
+EightDiagram::EightDiagram(Card::Suit suit, int number)
+    : Armor(suit, number)
+{
+    setObjectName("eight_diagram");
+}
+
+RenwangShield::RenwangShield(Card::Suit suit, int number)
+    : Armor(suit, number)
+{
+    setObjectName("renwang_shield");
+}
 
 void StandardPackage::addEquipCards()
 {
+    QList<Card *> cards;
+    cards
+        << new Crossbow(Card::Club, 1)
+        << new Crossbow(Card::Diamond, 1)
+        << new DoubleSword
+        << new QinggangSword
+        //@to-do: add Blade
+        << new Spear
+        << new Axe
+        //@to-do: add Halberd
+        << new KylinBow
+
+        << new EightDiagram(Card::Spade, 2)
+        << new EightDiagram(Card::Club, 2);
+    addCards(cards);
+
+    Card *jueying = new DefensiveHorse(Card::Spade, 5);
+    jueying->setObjectName("jueying");
+    addCard(jueying);
+
+    Card *dilu = new DefensiveHorse(Card::Club, 5);
+    dilu->setObjectName("dilu");
+    addCard(dilu);
+
+    Card *zhuahuangfeidian = new DefensiveHorse(Card::Heart, 13);
+    zhuahuangfeidian->setObjectName("zhuahuangfeidian");
+    addCard(zhuahuangfeidian);
+
+    Card *chitu = new OffensiveHorse(Card::Heart, 5);
+    chitu->setObjectName("chitu");
+    addCard(chitu);
+
+    Card *dayuan = new OffensiveHorse(Card::Spade, 13);
+    dayuan->setObjectName("dayuan");
+    addCard(dayuan);
+
+    Card *zixing = new OffensiveHorse(Card::Diamond, 13);
+    zixing->setObjectName("zixing");
+    addCard(zixing);
 }

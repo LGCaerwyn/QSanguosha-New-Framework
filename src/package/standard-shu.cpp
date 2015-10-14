@@ -17,51 +17,68 @@
     Mogara
 *********************************************************************/
 
+#include "card.h"
 #include "standardpackage.h"
 #include "general.h"
+#include "serverplayer.h"
 #include "skill.h"
+#include "structs.h"
+
+class Jizhi : public TriggerSkill
+{
+public:
+    Jizhi() : TriggerSkill("jizhi")
+    {
+        m_events << TargetChosen;
+    }
+
+    EventList triggerable(GameLogic *, EventType, ServerPlayer *player, QVariant &data, ServerPlayer *) const override
+    {
+        if (!TriggerSkill::triggerable(player))
+            return EventList();
+
+        CardUseStruct *use = data.value<CardUseStruct *>();
+        if (use->card && use->card->type() == Card::TrickType && use->card->subtype() != TrickCard::DelayedType)
+            return Event(this, player);
+        return EventList();
+    }
+
+    bool effect(GameLogic *, EventType, ServerPlayer *target, QVariant &, ServerPlayer *) const override
+    {
+        target->drawCards(1);
+        return false;
+    }
+};
 
 void StandardPackage::addShuGenerals()
 {
+    // SHU 001
     General *liubei = new General("liubei", "shu", 4);
+    liubei->setLord(true);
     addGeneral(liubei);
 
-    General *huangyueying = new General("huangyueying", "shu", 3, General::Female);
-    addGeneral(huangyueying);
-
-    General *zhugeliang = new General("zhugeliang", "shu", 3);
-    addGeneral(zhugeliang);
-
+    // SHU 002
     General *guanyu = new General("guanyu", "shu", 5);
     addGeneral(guanyu);
 
+    // SHU 003
     General *zhangfei = new General("zhangfei", "shu", 4);
     addGeneral(zhangfei);
 
+    // SHU 004
+    General *zhugeliang = new General("zhugeliang", "shu", 3);
+    addGeneral(zhugeliang);
+
+    // SHU 005
     General *zhaoyun = new General("zhaoyun", "shu", 4);
     addGeneral(zhaoyun);
 
-    General *huangzhong = new General("huangzhong", "shu", 4);
-    addGeneral(huangzhong);
+    // SHU 006
+    General *machao = new General("machao", "shu", 4);
+    addGeneral(machao);
 
-    General *weiyan = new General("weiyan", "shu", 4);
-    addGeneral(weiyan);
-
-    General *pangtong = new General("pangtong", "shu", 3);
-    addGeneral(pangtong);
-
-    General *wolong = new General("wolong", "shu", 3);
-    addGeneral(wolong);
-
-    General *liushan = new General("liushan", "shu", 3);
-    addGeneral(liushan);
-
-    General *menghuo = new General("menghuo", "shu", 4);
-    addGeneral(menghuo);
-
-    General *zhurong = new General("zhurong", "shu", 4, General::Female);
-    addGeneral(zhurong);
-
-    General *ganfuren = new General("ganfuren", "shu", 3, General::Female);
-    addGeneral(ganfuren);
+    // SHU 007
+    General *huangyueying = new General("huangyueying", "shu", 3, General::Female);
+    huangyueying->addSkill(new Jizhi);
+    addGeneral(huangyueying);
 }

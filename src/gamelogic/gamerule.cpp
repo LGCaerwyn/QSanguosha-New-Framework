@@ -17,12 +17,12 @@
     Mogara
 *********************************************************************/
 
+#include "card.h"
 #include "gamelogic.h"
 #include "gamerule.h"
 #include "general.h"
 #include "serverplayer.h"
-
-#include <QThread>
+#include "skill.h"
 
 QMap<EventType, GameRule::Callback> GameRule::m_callbacks;
 
@@ -31,6 +31,7 @@ GameRule::GameRule(GameLogic *logic)
 {
     m_events << GameStart;
     m_events << TurnStart << PhaseProceeding << PhaseEnd;
+    m_events << AfterHpReduced << AskForPeach << AskForPeachDone;
 }
 
 bool GameRule::triggerable(ServerPlayer *) const
@@ -38,7 +39,7 @@ bool GameRule::triggerable(ServerPlayer *) const
     return true;
 }
 
-bool GameRule::effect(GameLogic *logic, EventType event, ServerPlayer *current, QVariant &data, Player *) const
+bool GameRule::effect(GameLogic *logic, EventType event, ServerPlayer *current, QVariant &data, ServerPlayer *) const
 {
     if (logic->skipGameRule())
         return false;
@@ -57,8 +58,8 @@ void GameRule::onGameStart(ServerPlayer *current, QVariant &) const
     current->broadcastProperty("headGeneralName", "anjiang", current);
     current->broadcastProperty("deputyGeneralName", "anjiang", current);
 
-    current->notifyPropertyTo("headGeneralName", current);
-    current->notifyPropertyTo("deputyGeneralName", current);
+    current->unicastPropertyTo("headGeneralName", current);
+    current->unicastPropertyTo("deputyGeneralName", current);
 
     const General *headGeneral = current->headGeneral();
     const General *deputyGeneral = current->deputyGeneral();
@@ -72,9 +73,16 @@ void GameRule::onGameStart(ServerPlayer *current, QVariant &) const
     current->broadcastProperty("hp");
 
     current->setRole(headGeneral->kingdom());
-    current->notifyPropertyTo("role", current);
+    current->unicastPropertyTo("role", current);
     current->setKingdom(headGeneral->kingdom());
-    current->notifyPropertyTo("kingdom", current);
+    current->unicastPropertyTo("kingdom", current);
+
+    QList<const Skill *> skills = headGeneral->skills();
+    foreach (const Skill *skill, skills)
+        current->addHeadSkill(skill);
+    skills = deputyGeneral->skills();
+    foreach (const Skill *skill, skills)
+        current->addDeputySkill(skill);
 
     current->drawCards(4);
 }
@@ -90,8 +98,23 @@ void GameRule::onTurnStart(ServerPlayer *current, QVariant &) const
 
 void GameRule::onPhaseProceeding(ServerPlayer *current, QVariant &) const
 {
-    m_logic->delay(500);
+    GameLogic::msleep(500);
     switch (current->phase()) {
+    case Player::Judge: {
+        QList<Card *> tricks = current->delayedTricks()->cards();
+        while (tricks.length() > 0 && current->isAlive()) {
+            Card *trick = tricks.takeLast();
+
+            CardUseStruct use;
+            use.card = trick;
+            use.to << current;
+            CardEffectStruct effect(use);
+            effect.to = current;
+            m_logic->takeCardEffect(effect);
+            trick->complete(m_logic);
+        }
+        break;
+    }
     case Player::Draw: {
         int num = 2;
         QVariant data(num);
@@ -107,10 +130,14 @@ void GameRule::onPhaseProceeding(ServerPlayer *current, QVariant &) const
         while (current->isAlive()) {
             CardUseStruct use;
             current->activate(use);
-            if (use.card != nullptr)
-                m_logic->useCard(use);
-            else
+            if (use.card != nullptr) {
+                if (use.card->canRecast() && use.target == nullptr && use.to.isEmpty())
+                    current->recastCard(use.card);
+                else
+                    m_logic->useCard(use);
+            } else {
                 break;
+            }
         }
         break;
     }
@@ -120,7 +147,16 @@ void GameRule::onPhaseProceeding(ServerPlayer *current, QVariant &) const
         m_logic->trigger(CountMaxCardNum, current, data);
         maxCardNum = data.toInt();
         int discardNum = current->handcardNum() - maxCardNum;
-        //@to-do: discarding cards if (discardNum > 0)
+        if (discardNum > 0) {
+            current->showPrompt("ask_to_discard", discardNum);
+            QList<Card *> cards = current->askForCards(".|.|.|hand", discardNum);
+
+            CardsMoveStruct move;
+            move.cards = cards;
+            move.to.type = CardArea::DiscardPile;
+            move.isOpen = true;
+            m_logic->moveCards(move);
+        }
         break;
     }
     default:;
@@ -135,6 +171,83 @@ void GameRule::onPhaseEnd(ServerPlayer *current, QVariant &) const
     }
     default:;
     }
+    if (current->isDrunk()) {
+        current->setDrunk(false);
+        current->broadcastProperty("drunk");
+    }
+}
+
+void GameRule::onAfterHpReduced(ServerPlayer *victim, QVariant &data) const
+{
+    if (victim->hp() > 0)
+        return;
+
+    victim->setDying(true);
+    victim->broadcastProperty("dying");
+
+    DeathStruct death;
+    death.who = victim;
+    death.damage = data.value<DamageStruct *>();
+
+    QVariant dyingData = QVariant::fromValue(&death);
+
+    QList<ServerPlayer *> allPlayers = m_logic->allPlayers();
+    foreach (ServerPlayer *player, allPlayers) {
+        if (m_logic->trigger(EnterDying, player, dyingData) || victim->hp() > 0 || victim->isDead())
+            break;
+    }
+
+    if (victim->isAlive() && victim->hp() <= 0) {
+        QList<ServerPlayer *> allPlayers = m_logic->allPlayers();
+        foreach (ServerPlayer *saver, allPlayers) {
+            if (victim->hp() > 0 || victim->isDead())
+                break;
+
+            m_logic->trigger(AskForPeach, saver, dyingData);
+        }
+        m_logic->trigger(AskForPeachDone, victim, dyingData);
+    }
+
+    victim->setDying(false);
+    victim->broadcastProperty("dying");
+    m_logic->trigger(QuitDying, victim, dyingData);
+}
+
+void GameRule::onAskForPeach(ServerPlayer *current, QVariant &data) const
+{
+    DeathStruct *dying = data.value<DeathStruct *>();
+    while (dying->who->hp() <= 0) {
+        Card *peach = nullptr;
+        if (dying->who->isAlive()) {
+            int peachNum = 1 - dying->who->hp();
+            if (current != dying->who) {
+                QVariantList args;
+                args << "player" << dying->who->id();
+                args << peachNum;
+                current->showPrompt("ask_for_peach", args);
+                peach = current->askForCard("Peach");
+            } else {
+                current->showPrompt("ask_self_for_peach_or_analeptic", peachNum);
+                peach = current->askForCard("Peach,Analeptic");
+            }
+        }
+        if (peach == nullptr)
+            break;
+
+        CardUseStruct use;
+        use.from = current;
+        use.card = peach;
+        use.to << dying->who;
+        m_logic->useCard(use);
+    }
+}
+
+void GameRule::onAskForPeachDone(ServerPlayer *victim, QVariant &data) const
+{
+    if (victim->hp() <= 0 && victim->isAlive()) {
+        DeathStruct *death = data.value<DeathStruct *>();
+        m_logic->killPlayer(victim, death->damage);
+    }
 }
 
 #define ADD_GAMERULE(name) m_callbacks[name] = &GameRule::on##name
@@ -144,5 +257,8 @@ void GameRule::Init()
     ADD_GAMERULE(TurnStart);
     ADD_GAMERULE(PhaseProceeding);
     ADD_GAMERULE(PhaseEnd);
+    ADD_GAMERULE(AfterHpReduced);
+    ADD_GAMERULE(AskForPeach);
+    ADD_GAMERULE(AskForPeachDone);
 }
 C_INITIALIZE_CLASS(GameRule)

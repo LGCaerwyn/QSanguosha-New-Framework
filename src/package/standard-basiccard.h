@@ -31,9 +31,8 @@ struct SlashEffectStruct
     QList<Card *> jink;
 
     DamageStruct::Nature nature;
-    bool drank;
+    bool drunk;
     int jinkNum;
-    bool nullified;
 
     SlashEffectStruct();
 };
@@ -47,29 +46,12 @@ class Slash : public BasicCard
 public:
     Q_INVOKABLE Slash(Suit suit, int number);
 
-    bool targetFeasible(const QList<const Player *> &targets, const Player *) const override;
     bool targetFilter(const QList<const Player *> &targets, const Player *toSelect, const Player *self) const override;
-    void onEffect(GameLogic *logic, CardEffectStruct &cardEffect) override;
+    void effect(GameLogic *logic, CardEffectStruct &cardEffect) override;
     bool isAvailable(const Player *player) const override;
 
 protected:
     DamageStruct::Nature m_nature;
-};
-
-class FireSlash : public Slash
-{
-    Q_OBJECT
-
-public:
-    Q_INVOKABLE FireSlash(Suit suit, int number);
-};
-
-class ThunderSlash : public Slash
-{
-    Q_OBJECT
-
-public:
-    Q_INVOKABLE ThunderSlash(Suit suit, int number);
 };
 
 class Jink : public BasicCard
@@ -80,7 +62,7 @@ public:
     Q_INVOKABLE Jink(Suit suit, int number);
 
     void onUse(GameLogic *logic, CardUseStruct &use) override;
-    void onEffect(GameLogic *, CardEffectStruct &effect) override;
+    void effect(GameLogic *, CardEffectStruct &effect) override;
     bool isAvailable(const Player *) const override;
 };
 
@@ -92,19 +74,7 @@ public:
     Q_INVOKABLE Peach(Suit suit, int number);
 
     void onUse(GameLogic *logic, CardUseStruct &use) override;
-    void onEffect(GameLogic *logic, CardEffectStruct &effect) override;
-    bool isAvailable(const Player *player) const override;
-};
-
-class Analeptic : public BasicCard
-{
-    Q_OBJECT
-
-public:
-    Q_INVOKABLE Analeptic(Suit suit, int number);
-
-    void onUse(GameLogic *logic, CardUseStruct &use) override;
-    void onEffect(GameLogic *logic, CardEffectStruct &effect) override;
+    void effect(GameLogic *logic, CardEffectStruct &effect) override;
     bool isAvailable(const Player *player) const override;
 };
 

@@ -45,6 +45,8 @@ class Card : public QObject
     Q_PROPERTY(bool transferable READ isTransferable WRITE setTransferable)
     Q_PROPERTY(QString skillName READ skillName WRITE setSkillName)
 
+    friend class Package;
+
 public:
     enum Suit
     {
@@ -72,8 +74,13 @@ public:
         EquipType
     };
 
-    Q_INVOKABLE Card(Suit suit = NoSuit, int number = 0);
-    Card *clone() const;
+    enum Number
+    {
+        InfinityNum = 1000
+    };
+
+    Card(Suit suit = NoSuit, int number = 0);
+    virtual Card *clone() const;
 
     uint id() const { return m_id; }
     bool isVirtual() const { return id() == 0; }
@@ -105,9 +112,6 @@ public:
     QList<Card *> realCards();
     QList<const Card *> realCards() const;
 
-    void setTransferable(bool transferable) { m_transferable = transferable; }
-    bool isTransferable() const { return m_transferable; }
-
     void setSkillName(const QString &name) { m_skillName = name; }
     QString skillName() const { return m_skillName; }
 
@@ -116,20 +120,25 @@ public:
     bool hasFlag(const QString &flag) const { return m_flags.contains(flag); }
     void clearFlags() { m_flags.clear(); }
 
-    bool willThrow() const { return m_willThrow; }
+    void setTransferable(bool transferable) { m_transferable = transferable; }
+    bool isTransferable() const { return m_transferable; }
+
     bool canRecast() const { return m_canRecast; }
+    int useLimit() const;
+    int maxTargetNum() const;
+    int minTargetNum() const;
+    int distanceLimit() const;
 
     bool isTargetFixed() const { return m_targetFixed; }
     virtual bool targetFeasible(const QList<const Player *> &targets, const Player *self) const;
     virtual bool targetFilter(const QList<const Player *> &targets, const Player *toSelect, const Player *self) const;
-    virtual bool isAvailable(const Player *) const;
+    virtual bool isAvailable(const Player *self) const;
 
     virtual void onUse(GameLogic *logic, CardUseStruct &use);
     virtual void use(GameLogic *logic, CardUseStruct &use);
     virtual void onEffect(GameLogic *logic, CardEffectStruct &effect);
-
-    virtual bool isCancelable(const CardEffectStruct &effect) const;
-    virtual void onNullified(ServerPlayer *target) const;
+    virtual void effect(GameLogic *logic, CardEffectStruct &effect);
+    virtual void complete(GameLogic *logic);
 
 protected:
     uint m_id;
@@ -138,18 +147,19 @@ protected:
     Color m_color;
     Type m_type;
     int m_subtype;
-    bool m_transferable;
 
-    bool m_willThrow;
+    bool m_transferable;
     bool m_canRecast;
+    int m_useLimit;
+    int m_maxTargetNum;
+    int m_minTargetNum;
+    int m_distanceLimit;
     bool m_targetFixed;
 
     QString m_skillName;
     QList<Card *> m_subcards;
     QSet<QString> m_flags;
 };
-
-class Skill;
 
 class BasicCard : public Card
 {
@@ -170,6 +180,7 @@ public:
         GlobalEffectType,
         AreaOfEffectType,
         SingleTargetType,
+        DamageSpreadType,
 
         //Delayed Types
         DelayedType
@@ -177,11 +188,11 @@ public:
 
     TrickCard(Suit suit, int number);
 
-    bool isCancelable(const CardEffectStruct &effect) const override;
-
-protected:
-    bool m_cancelable;
+    void onEffect(GameLogic *logic, CardEffectStruct &effect) override;
+    virtual bool isNullifiable(const CardEffectStruct &effect) const;
 };
+
+class Skill;
 
 class EquipCard : public Card
 {
@@ -198,10 +209,13 @@ public:
         TreasureType
     };
 
-    EquipCard(Suit suit, int number, Skill *skill = nullptr);
+    EquipCard(Suit suit, int number);
 
     void onUse(GameLogic *logic, CardUseStruct &use) override;
     void use(GameLogic *logic, CardUseStruct &use) override;
+    void complete(GameLogic *) override;
+
+    Skill *skill() const { return m_skill; }
 
 protected:
     Skill *m_skill;
@@ -233,8 +247,6 @@ class SingleTargetTrick : public TrickCard
 
 public:
     SingleTargetTrick(Suit suit, int number);
-
-    bool targetFilter(const QList<const Player *> &, const Player *, const Player *) const override;
 };
 
 class DelayedTrick : public TrickCard
@@ -244,10 +256,103 @@ class DelayedTrick : public TrickCard
 public:
     DelayedTrick(Suit suit, int number);
 
+    bool targetFeasible(const QList<const Player *> &targets, const Player *) const override;
+    bool targetFilter(const QList<const Player *> &targets, const Player *toSelect, const Player *self) const override;
     void onUse(GameLogic *logic, CardUseStruct &use) override;
+    void use(GameLogic *logic, CardUseStruct &use) override;
+    void onEffect(GameLogic *logic, CardEffectStruct &effect) override;
+    void effect(GameLogic *logic, CardEffectStruct &effect) override;
+
+    virtual void takeEffect(GameLogic *logic, CardEffectStruct &effect) = 0;
 
 protected:
-    bool m_movable;
+    QString m_judgePattern;
+};
+
+class MovableDelayedTrick : public DelayedTrick
+{
+    Q_OBJECT
+
+public:
+    MovableDelayedTrick(Suit suit, int number);
+
+    void onUse(GameLogic *logic, CardUseStruct &use) override;
+    void effect(GameLogic *logic, CardEffectStruct &effect) override;
+    void complete(GameLogic *logic);
+    bool isAvailable(const Player *player) const override;
+};
+
+class Weapon : public EquipCard
+{
+    Q_OBJECT
+
+public:
+    Weapon(Suit suit, int number);
+
+    int attackRange() const;
+
+protected:
+    int m_attackRange;
+};
+
+class Armor : public EquipCard
+{
+    Q_OBJECT
+
+public:
+    Armor(Suit suit, int number);
+};
+
+class Horse : public EquipCard
+{
+    Q_OBJECT
+
+public:
+    Horse(Suit suit, int number);
+
+    Card *clone() const override;
+};
+
+class OffensiveHorse : public Horse
+{
+    Q_OBJECT
+
+public:
+    Q_INVOKABLE OffensiveHorse(Suit suit, int number);
+
+    int extraOutDistance() const;
+
+protected:
+    int m_extraOutDistance;
+};
+
+class DefensiveHorse : public Horse
+{
+    Q_OBJECT
+
+public:
+    Q_INVOKABLE DefensiveHorse(Suit suit, int number);
+
+    int extraInDistance() const;
+
+protected:
+    int m_extraInDistance;
+};
+
+class Treasure : public EquipCard
+{
+    Q_OBJECT
+
+public:
+    Treasure(Suit suit, int number);
+};
+
+class SkillCard : public Card
+{
+    Q_OBJECT
+
+public:
+    SkillCard(Suit suit, int number);
 };
 
 #endif // CARD_H

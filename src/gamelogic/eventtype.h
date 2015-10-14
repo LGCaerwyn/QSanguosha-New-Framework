@@ -34,9 +34,11 @@ enum EventType
     PhaseChanging,
     PhaseSkipping,
     TurnBroken,
+    StageChange,
 
     BeforeCardsMove,
     CardsMove,
+    AfterCardsMove,
 
     DrawNCards,
     AfterDrawNCards,
@@ -50,10 +52,11 @@ enum EventType
     TargetConfirmed,
     CardEffect,
     CardEffected,
-    CardEffectConfirmed,
     PostCardEffected,
     CardFinished,
     TrickCardCanceling,
+
+    CardResponded,
 
     SlashEffect,
     SlashEffected,
@@ -61,21 +64,38 @@ enum EventType
     SlashHit,
     SlashMissed,
 
-    ConfirmDamage,    // confirm the damage's count and damage's nature
-    Predamage,        // trigger the certain skill -- jueqing
-    DamageForseen,    // the first event in a damage -- kuangfeng dawu
-    DamageCaused,     // the moment for -- qianxi..
-    DamageInflicted,  // the moment for -- tianxiang..
-    PreDamageDone,    // before reducing Hp
-    DamageDone,       // it's time to do the damage
-    Damage,           // the moment for -- lieren..
-    Damaged,          // the moment for -- yiji..
-    DamageComplete,   // the moment for trigger iron chain
+    ConfirmDamage, // confirm the source, weight and nature of a damage
+    BeforeDamage,  // trigger certain skill -- jueqing
+    DamageStart,
+    Damaging,
+    Damaged,
+    AfterDamaging,
+    AfterDamaged,
+    DamageComplete,
 
-    PreHpRecover,
-    HpRecover,
+    BeforeRecover,
+    AfterRecover,
+
+    HpLost,
+    AfterHpLost,
+
+    BeforeHpReduced,
+    AfterHpReduced,
 
     MaxHpChanged,
+
+    StartJudge,
+    AskForRetrial,
+    FinishRetrial,
+    FinishJudge,
+
+    EnterDying,
+    QuitDying,
+    AskForPeach,
+    AskForPeachDone,
+    Died,
+    BuryVictim,
+    GameOverJudge,
 
     EventTypeCount
 };

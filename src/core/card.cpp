@@ -23,21 +23,18 @@
 #include "serverplayer.h"
 
 Card::Card(Suit suit, int number)
-    : m_suit(suit)
+    : m_id(0)
+    , m_suit(suit)
     , m_number(number)
     , m_color(NoColor)
     , m_transferable(false)
-    , m_willThrow(true)
     , m_canRecast(false)
+    , m_useLimit(InfinityNum)
+    , m_maxTargetNum(1)
+    , m_minTargetNum(1)
+    , m_distanceLimit(InfinityNum)
     , m_targetFixed(false)
 {
-    static uint cardId = 0;
-    if (m_suit != NoSuit && 1 <= number && number <= 13) {
-        cardId++;
-        m_id = cardId;
-    } else {
-        m_id = 0;
-    }
 }
 
 Card *Card::clone() const
@@ -127,9 +124,10 @@ void Card::setColorString(const QString &color)
 
 QString Card::colorString() const
 {
-    if (m_color == Black)
+    Color color = this->color();
+    if (color == Black)
         return "black";
-    else if (m_color == Red)
+    else if (color == Red)
         return "red";
     else
         return "no_color";
@@ -198,25 +196,41 @@ QList<const Card *> Card::realCards() const
     return cards;
 }
 
+int Card::useLimit() const
+{
+    return m_useLimit;
+}
+
+int Card::maxTargetNum() const
+{
+    return m_maxTargetNum;
+}
+
+int Card::minTargetNum() const
+{
+    return m_minTargetNum;
+}
+
+int Card::distanceLimit() const
+{
+    return m_distanceLimit;
+}
+
 bool Card::targetFeasible(const QList<const Player *> &targets, const Player *self) const
 {
-    C_UNUSED(targets);
     C_UNUSED(self);
-    return isTargetFixed();
+    return minTargetNum() <= targets.length() && targets.length() <= maxTargetNum();
 }
 
 bool Card::targetFilter(const QList<const Player *> &targets, const Player *toSelect, const Player *self) const
 {
-    C_UNUSED(targets);
-    C_UNUSED(toSelect);
-    C_UNUSED(self);
-    return false;
+    return targets.length() < maxTargetNum() && toSelect->isAlive() && self->distanceTo(toSelect) <= distanceLimit();
 }
 
-bool Card::isAvailable(const Player *) const
+bool Card::isAvailable(const Player *self) const
 {
-    //@to-do: check Jilei here
-    return true;
+    int limit = useLimit();
+    return limit == InfinityNum || self->cardHistory(objectName()) < limit;
 }
 
 void Card::onUse(GameLogic *logic, CardUseStruct &use)
@@ -236,47 +250,37 @@ void Card::onUse(GameLogic *logic, CardUseStruct &use)
 void Card::use(GameLogic *logic, CardUseStruct &use)
 {
     foreach (ServerPlayer *target, use.to) {
-        CardEffectStruct effect;
-        effect.card = this;
-        effect.from = use.from;
+        CardEffectStruct effect(use);
         effect.to = target;
-        effect.extra = use.extra;
-        effect.multiple = (use.to.length() > 1);
-        //@to-do: effect.nullified = ?
         logic->takeCardEffect(effect);
     }
 
     if (use.target) {
-        CardEffectStruct effect;
-        effect.card = this;
-        effect.from = use.from;
-        effect.target = use.target;
-        effect.extra = use.extra;
-        effect.multiple = false;
+        CardEffectStruct effect(use);
         logic->takeCardEffect(effect);
     }
 
-    const CardArea *table = logic->table();
-    if (table->length() > 0) {
-        CardsMoveStruct move;
-        move.cards = table->cards();
-        move.to.type = CardArea::DiscardPile;
-        move.isOpen = true;
-        logic->moveCards(move);
-    }
+    complete(logic);
 }
 
 void Card::onEffect(GameLogic *, CardEffectStruct &)
 {
 }
 
-bool Card::isCancelable(const CardEffectStruct &) const
+void Card::effect(GameLogic *, CardEffectStruct &)
 {
-    return false;
 }
 
-void Card::onNullified(ServerPlayer *) const
+void Card::complete(GameLogic *logic)
 {
+    const CardArea *table = logic->table();
+    if (table->contains(this)) {
+        CardsMoveStruct move;
+        move.cards << this;
+        move.to.type = CardArea::DiscardPile;
+        move.isOpen = true;
+        logic->moveCards(move);
+    }
 }
 
 BasicCard::BasicCard(Card::Suit suit, int number)
@@ -288,21 +292,51 @@ BasicCard::BasicCard(Card::Suit suit, int number)
 
 TrickCard::TrickCard(Card::Suit suit, int number)
     : Card(suit, number)
-    , m_cancelable(true)
 {
     m_type = TrickType;
 }
 
-bool TrickCard::isCancelable(const CardEffectStruct &) const
+void TrickCard::onEffect(GameLogic *logic, CardEffectStruct &effect)
 {
-    return m_cancelable;
+    if (isNullifiable(effect)) {
+        QList<ServerPlayer *> players = logic->allPlayers();
+        //@to-do: do not ask if no player can use nullification
+        foreach (ServerPlayer *player, players) {
+            if (effect.from) {
+                if (effect.to)
+                    player->showPrompt("trick-nullification-1", effect.from, effect.to, effect.use.card);
+                else
+                    player->showPrompt("trick-nullification-2", effect.from, effect.use.card);
+            } else if (effect.to) {
+                player->showPrompt("trick-nullification-3", effect.to, effect.use.card);
+            } else {
+                player->showPrompt("trick-nullification-4", effect.use.card);
+            }
+            Card *card = player->askForCard("Nullification");
+            if (card) {
+                CardUseStruct use;
+                use.from = player;
+                use.card = card;
+                use.target = effect.use.card;
+                use.extra = QVariant::fromValue(&effect);
+                logic->useCard(use);
+                break;
+            }
+        }
+    }
 }
 
-EquipCard::EquipCard(Card::Suit suit, int number, Skill *skill)
+bool TrickCard::isNullifiable(const CardEffectStruct &) const
+{
+    return true;
+}
+
+EquipCard::EquipCard(Card::Suit suit, int number)
     : Card(suit, number)
-    , m_skill(skill)
+    , m_skill(nullptr)
 {
     m_type = EquipType;
+    m_targetFixed = true;
 }
 
 void EquipCard::onUse(GameLogic *logic, CardUseStruct &use)
@@ -368,17 +402,22 @@ void EquipCard::use(GameLogic *logic, CardUseStruct &use)
     }
 }
 
+void EquipCard::complete(GameLogic *)
+{
+}
+
 GlobalEffect::GlobalEffect(Card::Suit suit, int number)
     : TrickCard(suit, number)
 {
     m_targetFixed = true;
     m_subtype = GlobalEffectType;
+    m_maxTargetNum = InfinityNum;
 }
 
 void GlobalEffect::onUse(GameLogic *logic, CardUseStruct &use)
 {
     if (use.to.isEmpty())
-        use.to = logic->otherPlayers(use.from);
+        use.to = logic->allPlayers();
     TrickCard::onUse(logic, use);
 }
 
@@ -387,6 +426,7 @@ AreaOfEffect::AreaOfEffect(Card::Suit suit, int number)
 {
     m_targetFixed = true;
     m_subtype = AreaOfEffectType;
+    m_maxTargetNum = InfinityNum;
 }
 
 void AreaOfEffect::onUse(GameLogic *logic, CardUseStruct &use)
@@ -402,29 +442,200 @@ SingleTargetTrick::SingleTargetTrick(Card::Suit suit, int number)
     m_subtype = SingleTargetType;
 }
 
-bool SingleTargetTrick::targetFilter(const QList<const Player *> &, const Player *, const Player *) const
-{
-    return true;
-}
-
-
 DelayedTrick::DelayedTrick(Card::Suit suit, int number)
     : TrickCard(suit, number)
 {
     m_subtype = DelayedType;
 }
 
+bool DelayedTrick::targetFeasible(const QList<const Player *> &targets, const Player *) const
+{
+    return targets.length() == 1;
+}
+
+bool DelayedTrick::targetFilter(const QList<const Player *> &targets, const Player *toSelect, const Player *self) const
+{
+    if (!targets.isEmpty() || toSelect == self)
+        return false;
+
+    const CardArea *area = toSelect->delayedTricks();
+    if (area->length() <= 0)
+        return true;
+
+    return !area->contains(metaObject()->className()) && TrickCard::targetFilter(targets, toSelect, self);
+}
+
 void DelayedTrick::onUse(GameLogic *logic, CardUseStruct &use)
 {
-    use.card = this;
+    logic->sortByActionOrder(use.to);
 
-    QVariant data = QVariant::fromValue(&use);
-    logic->trigger(PreCardUsed, use.from, data);
+    QVariant useData = QVariant::fromValue(&use);
+    logic->trigger(PreCardUsed, use.from, useData);
+}
 
+void DelayedTrick::use(GameLogic *logic, CardUseStruct &use)
+{
     CardsMoveStruct move;
     move.cards = use.card->realCards();
-    move.to.type = CardArea::DelayedTrick;
-    move.to.owner = use.to.first();
+    move.isOpen = true;
+    if (use.to.isEmpty()) {
+        move.to.type = CardArea::DiscardPile;
+    } else {
+        move.to.type = CardArea::DelayedTrick;
+        move.to.owner = use.to.first();
+    }
+    logic->moveCards(move);
+}
+
+void DelayedTrick::onEffect(GameLogic *logic, CardEffectStruct &effect)
+{
+    CardsMoveStruct move;
+    move.cards << this;
+    move.to.type = CardArea::Table;
     move.isOpen = true;
     logic->moveCards(move);
+
+    TrickCard::onEffect(logic, effect);
+}
+
+void DelayedTrick::effect(GameLogic *logic, CardEffectStruct &effect)
+{
+    JudgeStruct judge(m_judgePattern);
+    judge.who = effect.to;
+    logic->judge(judge);
+
+    if (judge.matched)
+        takeEffect(logic, effect);
+}
+
+MovableDelayedTrick::MovableDelayedTrick(Card::Suit suit, int number)
+    : DelayedTrick(suit, number)
+{
+    m_targetFixed = true;
+}
+
+void MovableDelayedTrick::onUse(GameLogic *logic, CardUseStruct &use)
+{
+    if (use.to.isEmpty())
+        use.to << use.from;
+    DelayedTrick::onUse(logic, use);
+}
+
+void MovableDelayedTrick::effect(GameLogic *logic, CardEffectStruct &effect)
+{
+    JudgeStruct judge(m_judgePattern);
+    judge.who = effect.to;
+    logic->judge(judge);
+
+    if (judge.matched) {
+        takeEffect(logic, effect);
+        const CardArea *table = logic->table();
+        if (table->contains(this)) {
+            CardsMoveStruct move;
+            move.cards << this;
+            move.to.type = CardArea::DiscardPile;
+            move.isOpen = true;
+            logic->moveCards(move);
+        }
+    }
+}
+
+void MovableDelayedTrick::complete(GameLogic *logic)
+{
+    const CardArea *table = logic->table();
+    if (!table->contains(this))
+        return;
+
+    ServerPlayer *current = logic->currentPlayer();
+    ServerPlayer *target = logic->currentPlayer();
+    forever {
+        target = target->nextAlive();
+        if (!targetFilter(QList<const Player *>(), target, nullptr) && target != current)
+            continue;
+
+        CardsMoveStruct move;
+        move.cards << this;
+        move.to.type = CardArea::DelayedTrick;
+        move.to.owner = target;
+        move.isOpen = true;
+        logic->moveCards(move);
+
+        CardUseStruct use;
+        use.card = this;
+        use.to << target;
+
+        QVariant data = QVariant::fromValue(&use);
+        foreach (ServerPlayer *to, use.to)
+            logic->trigger(TargetConfirming, to, data);
+        if (use.to.isEmpty())
+            continue;
+        foreach (ServerPlayer *to, use.to)
+            logic->trigger(TargetConfirmed, to, data);
+        if (!use.to.isEmpty())
+            break;
+    }
+}
+
+bool MovableDelayedTrick::isAvailable(const Player *player) const
+{
+    const char *className = metaObject()->className();
+    QList<Card *> cards = player->delayedTricks()->cards();
+    foreach (const Card *card, cards) {
+        if (card->inherits(className))
+            return false;
+    }
+    return DelayedTrick::isAvailable(player);
+}
+
+Weapon::Weapon(Card::Suit suit, int number)
+    : EquipCard(suit, number)
+    , m_attackRange(0)
+{
+    m_subtype = WeaponType;
+}
+
+
+Armor::Armor(Card::Suit suit, int number)
+    : EquipCard(suit, number)
+{
+    m_subtype = ArmorType;
+}
+
+
+Horse::Horse(Card::Suit suit, int number)
+    : EquipCard(suit, number)
+{
+}
+
+Card *Horse::clone() const
+{
+    Card *card = Card::clone();
+    card->setObjectName(objectName());
+    return card;
+}
+
+OffensiveHorse::OffensiveHorse(Card::Suit suit, int number)
+    : Horse(suit, number)
+    , m_extraOutDistance(-1)
+{
+    m_subtype = OffensiveHorseType;
+}
+
+DefensiveHorse::DefensiveHorse(Card::Suit suit, int number)
+    : Horse(suit, number)
+    , m_extraInDistance(+1)
+{
+    m_subtype = DefensiveHorseType;
+}
+
+Treasure::Treasure(Card::Suit suit, int number)
+    : EquipCard(suit, number)
+{
+    m_subtype = TreasureType;
+}
+
+SkillCard::SkillCard(Card::Suit suit, int number)
+    : Card(suit, number)
+{
+    m_subtype = SkillType;
 }

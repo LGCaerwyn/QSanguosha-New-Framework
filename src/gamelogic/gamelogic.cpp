@@ -42,14 +42,17 @@ GameLogic::GameLogic(CRoom *parent)
     , m_gameRule(nullptr)
     , m_skipGameRule(false)
     , m_round(0)
+    , m_reshufflingCount(0)
 {
     m_drawPile = new CardArea(CardArea::DrawPile);
     m_discardPile = new CardArea(CardArea::DiscardPile);
     m_table = new CardArea(CardArea::Table);
+    m_wugu = new CardArea(CardArea::Wugu);
 }
 
 GameLogic::~GameLogic()
 {
+    delete m_wugu;
     delete m_table;
     delete m_discardPile;
     delete m_drawPile;
@@ -80,6 +83,13 @@ void GameLogic::addEventHandler(const EventHandler *handler)
         m_handlers[event] << handler;
 }
 
+void GameLogic::removeEventHandler(const EventHandler *handler)
+{
+    QList<EventType> events = handler->events();
+    foreach (EventType event, events)
+        m_handlers[event].removeOne(handler);
+}
+
 bool GameLogic::trigger(EventType event, ServerPlayer *target)
 {
     QVariant data;
@@ -99,7 +109,7 @@ bool GameLogic::trigger(EventType event, ServerPlayer *target, QVariant &data)
     int triggerableIndex = 0;
     while (triggerableIndex < handlers.length()) {
         int currentPriority = 0;
-        QMap<ServerPlayer *, QList<Event>> triggerableEvents;
+        QMap<ServerPlayer *, EventList> triggerableEvents;
 
         //Construct triggerableEvents
         do {
@@ -128,7 +138,7 @@ bool GameLogic::trigger(EventType event, ServerPlayer *target, QVariant &data)
                     continue;
 
                 forever {
-                    QList<Event> &events = triggerableEvents[invoker];
+                    EventList &events = triggerableEvents[invoker];
                     if (events.isEmpty())
                         break;
 
@@ -158,13 +168,7 @@ bool GameLogic::trigger(EventType event, ServerPlayer *target, QVariant &data)
                     ServerPlayer *eventTarget = choice.to.isEmpty() ? target : choice.to.first();
 
                     //Ask the invoker for cost
-                    if (!invoker->hasShownSkill(choice.handler))
-                        m_globalRequestEnabled = true;
                     bool takeEffect = choice.handler->cost(this, event, eventTarget, data, invoker);
-                    if (takeEffect && !invoker->hasShownSkill(choice.handler)) {
-                        //@todo: show skill here?
-                    }
-                    m_globalRequestEnabled = false;
 
                     //Take effect
                     if (takeEffect) {
@@ -228,6 +232,10 @@ QList<ServerPlayer *> GameLogic::allPlayers(bool includeDead) const
     if (current == nullptr)
         return players;
 
+    qSort(players.begin(), players.end(), [](const ServerPlayer *a, const ServerPlayer *b){
+        return a->seat() < b->seat();
+    });
+
     int currentIndex = players.indexOf(current);
     if (currentIndex == -1)
         return players;
@@ -271,51 +279,59 @@ void GameLogic::sortByActionOrder(QList<ServerPlayer *> &players) const
     });
 }
 
+Card *GameLogic::getDrawPileCard()
+{
+    if (m_drawPile->length() < 1)
+        reshuffleDrawPile();
+    return m_drawPile->first();
+}
+
+QList<Card *> GameLogic::getDrawPileCards(int n)
+{
+    if (m_drawPile->length() < n)
+        reshuffleDrawPile();
+    return m_drawPile->first(n);
+}
+
+void GameLogic::reshuffleDrawPile()
+{
+    if (m_discardPile->length() <= 0) {
+        //@to-do: stand off. Game over.
+    }
+
+    m_reshufflingCount++;
+
+    //@to-do: check reshuffling count limit
+    /*if (limit > 0 && times == limit)
+        gameOver(".");*/
+
+    QList<Card *> cards = m_discardPile->cards();
+    m_discardPile->clear();
+    qShuffle(cards);
+    foreach (Card *card, cards)
+        m_cardPosition[card] = m_drawPile;
+    m_drawPile->add(cards, CardArea::Bottom);
+}
+
 void GameLogic::moveCards(const CardsMoveStruct &move)
 {
     moveCards(QList<CardsMoveStruct>() << move);
 }
 
-void GameLogic::moveCards(QList<CardsMoveStruct> moves)
+void GameLogic::moveCards(QList<CardsMoveStruct> &moves)
 {
-    //Fill card source information
-    for (int i = 0, maxi = moves.length(); i < maxi; i++) {
-        CardsMoveStruct &move = moves[i];
-        if (move.from.type != CardArea::Unknown)
-            continue;
-
-        QMap<CardArea *, QList<Card *>> cardSource;
-        foreach (Card *card, move.cards) {
-            CardArea *from = m_cardPosition[card];
-            if (from == nullptr)
-                continue;
-            cardSource[from].append(card);
-        }
-
-        QMapIterator<CardArea *, QList<Card *>> iter(cardSource);
-        while (iter.hasNext()) {
-            iter.next();
-            CardArea *from = iter.key();
-            CardsMoveStruct submove;
-            submove.from.type = from->type();
-            submove.from.owner = from->owner();
-            submove.from.name = from->name();
-            submove.cards = iter.value();
-            submove.to = move.to;
-            submove.isOpen = move.isOpen;
-            moves << submove;
-        }
-
-        moves.removeAt(i);
-        i--;
-        maxi--;
-    }
-
-    QList<ServerPlayer *> allPlayers = this->allPlayers();
+    filterCardsMove(moves);
     QVariant moveData = QVariant::fromValue(&moves);
+    QList<ServerPlayer *> allPlayers = this->allPlayers();
     foreach (ServerPlayer *player, allPlayers)
         trigger(BeforeCardsMove, player, moveData);
 
+    filterCardsMove(moves);
+    allPlayers = this->allPlayers();
+    foreach (ServerPlayer *player, allPlayers)
+        trigger(CardsMove, player, moveData);
+
+    filterCardsMove(moves);
     for (int i = 0 ; i < moves.length(); i++) {
         const CardsMoveStruct &move = moves.at(i);
         CardArea *from = findArea(move.from);
@@ -344,7 +360,7 @@ void GameLogic::moveCards(QList<CardsMoveStruct> moves)
 
     allPlayers = this->allPlayers();
     foreach (ServerPlayer *player, allPlayers)
-        trigger(CardsMove, player, moveData);
+        trigger(AfterCardsMove, player, moveData);
 }
 
 bool GameLogic::useCard(CardUseStruct &use)
@@ -423,20 +439,78 @@ bool GameLogic::takeCardEffect(CardEffectStruct &effect)
     bool canceled = false;
     if (effect.to) {
         if (effect.to->isAlive()) {
-            // No skills should be triggered here!
-            trigger(CardEffect, effect.to, data);
-            // Make sure that effectiveness of Slash isn't judged here!
-            canceled = trigger(CardEffected, effect.to, data);
+            canceled = trigger(CardEffect, effect.to, data);
             if (!canceled) {
-                trigger(CardEffectConfirmed, effect.to, data);
-                if (effect.to->isAlive())
-                    effect.card->onEffect(this, effect);
+                canceled = trigger(CardEffected, effect.to, data);
+                if (!canceled) {
+                    effect.use.card->onEffect(this, effect);
+                    if (effect.to->isAlive() && !effect.isNullified())
+                        effect.use.card->effect(this, effect);
+                }
             }
         }
-    } else if (effect.target)
-        effect.card->onEffect(this, effect);
+    } else if (effect.use.target) {
+        effect.use.card->onEffect(this, effect);
+        if (!effect.isNullified())
+            effect.use.card->effect(this, effect);
+    }
     trigger(PostCardEffected, effect.to, data);
     return !canceled;
+}
+
+void GameLogic::respondCard(CardResponseStruct &response)
+{
+    CardsMoveStruct move;
+    move.cards << response.card;
+    move.to.type = CardArea::Table;
+    move.isOpen = true;
+    moveCards(move);
+
+    QVariant data = QVariant::fromValue(&response);
+    trigger(CardResponded, response.from, data);
+
+    if (m_table->contains(response.card)) {
+        CardsMoveStruct move;
+        move.cards << response.card;
+        move.to.type = CardArea::DiscardPile;
+        move.isOpen = true;
+        moveCards(move);
+    }
+}
+
+void GameLogic::judge(JudgeStruct &judge)
+{
+    QVariant data = QVariant::fromValue(&judge);
+
+    if (trigger(StartJudge, judge.who, data))
+        return;
+
+    judge.card = getDrawPileCard();
+    judge.updateResult();
+
+    CardsMoveStruct move;
+    move.cards << judge.card;
+    move.to.type = CardArea::Judge;
+    move.to.owner = judge.who;
+    move.isOpen = true;
+    moveCards(move);
+
+    QList<ServerPlayer *> players = allPlayers();
+    foreach (ServerPlayer *player, players) {
+        if (trigger(AskForRetrial, player, data))
+            break;
+    }
+    trigger(FinishRetrial, judge.who, data);
+    trigger(FinishJudge, judge.who, data);
+
+    const CardArea *judgeCards = judge.who->judgeCards();
+    if (judgeCards->contains(judge.card)) {
+        CardsMoveStruct move;
+        move.cards << judge.card;
+        move.to.type = CardArea::DiscardPile;
+        move.isOpen = true;
+        moveCards(move);
+    }
 }
 
 QList<Card *> GameLogic::findCards(const QVariant &data)
@@ -461,26 +535,25 @@ void GameLogic::damage(DamageStruct &damage)
         trigger(ConfirmDamage, damage.from, data);
     }
 
-    // Predamage
-    if (trigger(Predamage, damage.from, data))
+    if (trigger(BeforeDamage, damage.from, data))
         return;
 
     try {
         do {
-            if (trigger(DamageForseen, damage.to, data))
+            if (trigger(DamageStart, damage.to, data))
                 break;
 
-            if (damage.from && trigger(DamageCaused, damage.from, data))
+            if (damage.from && trigger(Damaging, damage.from, data))
                 break;
 
-            if (damage.to && trigger(DamageInflicted, damage.to, data))
+            if (damage.to && trigger(Damaged, damage.to, data))
                 break;
         } while (false);
 
         if (damage.to)
-            trigger(PreDamageDone, damage.to, data);
+            trigger(BeforeHpReduced, damage.to, data);
 
-        if (damage.to && !trigger(DamageDone, damage.to, data)) {
+        if (damage.to) {
             QVariantList arg;
             arg << damage.to->id();
             arg << damage.nature;
@@ -490,13 +563,15 @@ void GameLogic::damage(DamageStruct &damage)
             int newHp = damage.to->hp() - damage.damage;
             damage.to->setHp(newHp);
             damage.to->broadcastProperty("hp");
+
+            trigger(AfterHpReduced, damage.to, data);
         }
 
         if (damage.from)
-            trigger(Damage, damage.from, data);
+            trigger(AfterDamaging, damage.from, data);
 
         if (damage.to)
-            trigger(Damaged, damage.to, data);
+            trigger(AfterDamaged, damage.to, data);
 
         if (damage.to)
             trigger(DamageComplete, damage.to, data);
@@ -513,7 +588,7 @@ void GameLogic::recover(RecoverStruct &recover)
         return;
 
     QVariant data = QVariant::fromValue(&recover);
-    if (trigger(PreHpRecover, recover.to, data))
+    if (trigger(BeforeRecover, recover.to, data))
         return;
     if (recover.to == nullptr)
         return;
@@ -528,12 +603,28 @@ void GameLogic::recover(RecoverStruct &recover)
     arg["num"] = recover.recover;
     room()->broadcastNotification(S_COMMAND_RECOVER, arg);
 
-    trigger(HpRecover, recover.to, data);
+    trigger(AfterRecover, recover.to, data);
 }
 
-void GameLogic::delay(ulong msecs)
+void GameLogic::killPlayer(ServerPlayer *victim, DamageStruct *damage)
 {
-    QThread::currentThread()->msleep(msecs);
+    QList<ServerPlayer *> allPlayers = this->allPlayers();
+
+    victim->setAlive(false);
+    victim->broadcastProperty("alive");
+    victim->broadcastProperty("role");
+
+    DeathStruct death;
+    death.who = victim;
+    death.damage = damage;
+    QVariant data = QVariant::fromValue(&death);
+
+    foreach (ServerPlayer *player, allPlayers) {
+        if (player->isAlive() || player == victim)
+            trigger(Died, player, data);
+    }
+
+    trigger(BuryVictim, victim, data);
 }
 
 CAbstractPlayer *GameLogic::createPlayer(CServerUser *user)
@@ -593,8 +684,11 @@ void GameLogic::prepareToStart()
 
     //Choose 7 random generals for each player
     //@to-do: config
-    int candidateLimit = 7;
     qShuffle(generals);
+    int candidateLimit = 7;
+    int minCandidateNum = candidateLimit * players.length();
+    while (minCandidateNum > generals.length())
+        generals << generals.mid(0, minCandidateNum - generals.length());
 
     QMap<ServerPlayer *, QList<const General *>> playerCandidates;
 
@@ -675,10 +769,48 @@ CardArea *GameLogic::findArea(const CardsMoveStruct::Area &area)
             return m_discardPile;
         case CardArea::Table:
             return m_table;
+        case CardArea::Wugu:
+            return m_wugu;
         default: qWarning("Global Area Not Found");
         }
     }
     return nullptr;
+}
+
+void GameLogic::filterCardsMove(QList<CardsMoveStruct> &moves)
+{
+    //Fill card source information
+    for (int i = 0, maxi = moves.length(); i < maxi; i++) {
+        CardsMoveStruct &move = moves[i];
+        if (move.from.type != CardArea::Unknown)
+            continue;
+
+        QMap<CardArea *, QList<Card *>> cardSource;
+        foreach (Card *card, move.cards) {
+            CardArea *from = m_cardPosition[card];
+            if (from == nullptr)
+                continue;
+            cardSource[from].append(card);
+        }
+
+        QMapIterator<CardArea *, QList<Card *>> iter(cardSource);
+        while (iter.hasNext()) {
+            iter.next();
+            CardArea *from = iter.key();
+            CardsMoveStruct submove;
+            submove.from.type = from->type();
+            submove.from.owner = from->owner();
+            submove.from.name = from->name();
+            submove.cards = iter.value();
+            submove.to = move.to;
+            submove.isOpen = move.isOpen;
+            moves << submove;
+        }
+
+        moves.removeAt(i);
+        i--;
+        maxi--;
+    }
 }
 
 void GameLogic::run()
@@ -696,6 +828,8 @@ void GameLogic::run()
         try {
             forever {
                 ServerPlayer *current = currentPlayer();
+
+                //@to-do: fix this if Seat 1 died
                 if (current->seat() == 1)
                     m_round++;
 

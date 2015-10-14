@@ -31,6 +31,7 @@ static Client *ClientInstance = nullptr;
 
 Client::Client(QObject *parent)
     : CClient(parent)
+    , m_wugu(new CardArea(CardArea::Wugu))
 {
     ClientInstance = this;
     connect(this, &CClient::gameStarted, this, &Client::restart);
@@ -44,6 +45,11 @@ Client *Client::instance()
 
 Client::~Client()
 {
+    delete m_wugu;
+
+    foreach (Card *card, m_cards)
+        card->deleteLater();
+
     if (ClientInstance == this)
         ClientInstance = nullptr;
 }
@@ -115,8 +121,82 @@ CardArea *Client::findArea(const CardsMoveStruct::Area &area)
         default:
             return nullptr;
         }
+    } else {
+        switch (area.type) {
+        case CardArea::Wugu:
+            return m_wugu;
+        default:
+            return nullptr;
+        }
     }
     return nullptr;
+}
+
+QList<Card *> Client::findCards(const QVariant &data)
+{
+    QList<Card *> result;
+    const QVariantList cardList = data.toList();
+    if (cardList.isEmpty()) {
+        int cardNum = data.toInt();
+        result.reserve(cardNum);
+        for (int i = 0; i < cardNum; i++)
+            result << nullptr;
+    } else {
+        foreach (const QVariant &cardData, cardList) {
+            Card *card = m_cards.value(cardData.toUInt());
+            if (card)
+                result << card;
+            else
+                qWarning("Unknown card id received: %u", cardData.toUInt());
+        }
+    }
+    return result;
+}
+
+void Client::ShowPromptCommand(QObject *receiver, const QVariant &data)
+{
+    const QVariantList args = data.toList();
+    if (args.isEmpty())
+        return;
+
+    QString message = args.first().toString();
+    if (message.isEmpty())
+        return;
+
+
+    Client *client = qobject_cast<Client *>(receiver);
+
+    message = tr(message.toLatin1().constData());
+    for (int i = 1; i < args.length(); i++) {
+        QString arg = args.at(i).toString();
+        if (arg == "player") {
+            i++;
+            if (i >= args.length())
+                break;
+            uint playerId = args.at(i).toUInt();
+            const ClientPlayer *player = client->findPlayer(playerId);
+            if (player)
+                message = message.arg(player->fullGeneralName());
+            else
+                message = message.arg(tr("Unknown"));
+        } else if (arg == "card") {
+            i++;
+            if (i >= args.length())
+                break;
+            uint cardId = args.at(i).toUInt();
+            const Card *card = client->findCard(cardId);
+            if (card) {
+                message = message.arg(QString("%1<img src=\"image://root/card/suit/%2.png\" />%3")
+                                      .arg(tr(card->objectName()))
+                                      .arg(card->suitString())
+                                      .arg(card->number()));
+            }
+        } else {
+            message = message.arg(arg);
+        }
+    }
+
+    emit client->promptReceived(message);
 }
 
 void Client::ArrangeSeatCommand(QObject *receiver, const QVariant &data)
@@ -132,19 +212,24 @@ void Client::ArrangeSeatCommand(QObject *receiver, const QVariant &data)
 
     foreach (const QVariant &rawInfo, infos) {
         const QVariantMap info = rawInfo.toMap();
+
+        CClientUser *agent = nullptr;
         if (info.contains("userId")) {
             uint userId = info["userId"].toUInt();
-            CClientUser *user = client->findUser(userId);
+            agent = client->findUser(userId);
+        } else if (info.contains("robotId")) {
+            uint robotId = info["robotId"].toUInt();
+            agent = client->findRobot(robotId);
+        }
 
-            ClientPlayer *player = new ClientPlayer(user, client);
+        if (agent) {
+            ClientPlayer *player = new ClientPlayer(agent, client);
             player->setId(info["playerId"].toUInt());
             client->m_players[player->id()] = player;
-            client->m_user2player[user] = player;
-            player->setScreenName(user->screenName());
+            client->m_user2player[agent] = player;
+            player->setScreenName(agent->screenName());
 
             players << player;
-        } else if (info.contains("robotId")) {
-            //@to-do:
         }
     }
 
@@ -167,6 +252,11 @@ void Client::ArrangeSeatCommand(QObject *receiver, const QVariant &data)
 void Client::PrepareCardsCommand(QObject *receiver, const QVariant &data)
 {
     Client *client = qobject_cast<Client *>(receiver);
+
+    foreach (Card *card, client->m_cards)
+        card->deleteLater();
+    client->m_cards.clear();
+
     Engine *engine = Engine::instance();
     QVariantList cardData = data.toList();
     foreach (const QVariant &cardId, cardData) {
@@ -233,22 +323,7 @@ void Client::MoveCardsCommand(QObject *receiver, const QVariant &data)
         move.to.owner = client->findPlayer(to["ownerId"].toInt());
         move.isOpen = to["isOpen"].toBool();
         move.isLastHandCard = to["isLastHandCard"].toBool();
-
-        const QVariantList cards = moveData["cards"].toList();
-        if (cards.isEmpty()) {
-            int cardNum = moveData["cards"].toInt();
-            move.cards.reserve(cardNum);
-            for (int i = 0; i < cardNum; i++)
-                move.cards << nullptr;
-        } else {
-            foreach (const QVariant &cardData, cards) {
-                Card *card = client->m_cards.value(cardData.toUInt());
-                if (card)
-                    move.cards << card;
-                else
-                    qWarning("Unknown card id received: %u", cardData.toUInt());
-            }
-        }
+        move.cards = client->findCards(moveData["cards"]);
 
         CardArea *source = client->findArea(move.from);
         CardArea *destination = client->findArea(move.to);
@@ -265,8 +340,21 @@ void Client::MoveCardsCommand(QObject *receiver, const QVariant &data)
 
 void Client::UseCardRequestCommand(QObject *receiver, const QVariant &data)
 {
+    const QVariantMap arg = data.toMap();
     Client *client = qobject_cast<Client *>(receiver);
-    emit client->usingCard(data.toString());
+    if (arg.size() != 3) {
+        emit client->usingCard(QString(), QList<const Player *>());
+    } else {
+        QString pattern = arg["pattern"].toString();
+        QList<const Player *> targets;
+        QVariantList dataList = arg["assignedTargets"].toList();
+        foreach (const QVariant &data, dataList) {
+            const ClientPlayer *target = client->findPlayer(data.toUInt());
+            if (target)
+                targets << target;
+        }
+        emit client->usingCard(pattern, targets);
+    }
 }
 
 void Client::UseCardCommand(QObject *receiver, const QVariant &data)
@@ -332,14 +420,71 @@ void Client::RecoverCommand(QObject *receiver, const QVariant &data)
 
 void Client::AskForCardRequestCommand(QObject *receiver, const QVariant &data)
 {
-    QVariantMap arg = data.toMap();
-    if (!arg.contains("pattern") || !arg.contains("prompt"))
+    const QVariantMap arg = data.toMap();
+    if (!arg.contains("pattern"))
         return;
 
     QString pattern = arg["pattern"].toString();
-    QString prompt = arg["prompt"].toString();
     Client *client = qobject_cast<Client *>(receiver);
-    emit client->cardAsked(pattern, prompt);
+
+    if (arg.contains("minNum") && arg.contains("maxNum")) {
+        int minNum = arg["minNum"].toInt();
+        int maxNum = arg["maxNum"].toInt();
+        int optional = arg["optional"].toBool();
+        emit client->cardsAsked(pattern, minNum, maxNum, optional);
+    } else {
+        emit client->cardAsked(pattern);
+    }
+}
+
+void Client::ShowAmazingGraceCommand(QObject *receiver, const QVariant &)
+{
+    Client *client = qobject_cast<Client *>(receiver);
+    emit client->amazingGraceStarted();
+}
+
+void Client::ClearAmazingGraceCommand(QObject *receiver, const QVariant &)
+{
+    Client *client = qobject_cast<Client *>(receiver);
+    emit client->amazingGraceFinished();
+}
+
+void Client::TakeAmazingGraceRequestCommand(QObject *receiver, const QVariant &)
+{
+    Client *client = qobject_cast<Client *>(receiver);
+    emit client->amazingGraceRequested();
+}
+
+void Client::ChoosePlayerCardRequestCommand(QObject *receiver, const QVariant &data)
+{
+    Client *client = qobject_cast<Client *>(receiver);
+    const QVariantMap args = data.toMap();
+    QList<Card *> handcards = client->findCards(args["handcards"]);
+    QList<Card *> equips = client->findCards(args["equips"]);
+    QList<Card *> delayedTricks = client->findCards(args["delayedTricks"]);
+    emit client->choosePlayerCardRequested(handcards, equips, delayedTricks);
+}
+
+void Client::ShowCardCommand(QObject *receiver, const QVariant &data)
+{
+    const QVariantMap arg = data.toMap();
+    if (arg.isEmpty())
+        return;
+
+    Client *client = qobject_cast<Client *>(receiver);
+    const ClientPlayer *from = client->findPlayer(arg["from"].toUInt());
+    if (from == nullptr)
+        return;
+
+    QVariantList dataList = arg["cards"].toList();
+    QList<const Card *> cards;
+    foreach (const QVariant &var, dataList) {
+        const Card *card = client->findCard(var.toUInt());
+        if (card)
+            cards << card;
+    }
+
+    emit client->cardShown(from, cards);
 }
 
 static QObject *ClientInstanceCallback(QQmlEngine *, QJSEngine *)
@@ -351,6 +496,7 @@ void Client::Init()
 {
     qmlRegisterSingletonType<Client>("Sanguosha", 1, 0, "Client", ClientInstanceCallback);
 
+    AddCallback(S_COMMAND_SHOW_PROMPT, ShowPromptCommand);
     AddCallback(S_COMMAND_ARRANGE_SEAT, ArrangeSeatCommand);
     AddCallback(S_COMMAND_PREPARE_CARDS, PrepareCardsCommand);
     AddCallback(S_COMMAND_UPDATE_PLAYER_PROPERTY, UpdatePlayerPropertyCommand);
@@ -359,9 +505,14 @@ void Client::Init()
     AddCallback(S_COMMAND_DAMAGE, DamageCommand);
     AddCallback(S_COMMAND_RECOVER, RecoverCommand);
     AddCallback(S_COMMAND_USE_CARD, UseCardCommand);
+    AddCallback(S_COMMAND_SHOW_AMAZING_GRACE, ShowAmazingGraceCommand);
+    AddCallback(S_COMMAND_CLEAR_AMAZING_GRACE, ClearAmazingGraceCommand);
+    AddCallback(S_COMMAND_SHOW_CARD, ShowCardCommand);
 
     AddInteraction(S_COMMAND_CHOOSE_GENERAL, ChooseGeneralRequestCommand);
     AddInteraction(S_COMMAND_USE_CARD, UseCardRequestCommand);
     AddInteraction(S_COMMAND_ASK_FOR_CARD, AskForCardRequestCommand);
+    AddInteraction(S_COMMAND_TAKE_AMAZING_GRACE, TakeAmazingGraceRequestCommand);
+    AddInteraction(S_COMMAND_CHOOSE_PLAYER_CARD, ChoosePlayerCardRequestCommand);
 }
 C_INITIALIZE_CLASS(Client)

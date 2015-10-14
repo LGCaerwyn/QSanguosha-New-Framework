@@ -34,8 +34,9 @@ Player::Player(QObject *parent)
     , m_turnCount(0)
     , m_faceUp(false)
     , m_handcardNum(0)
-    , m_drank(false)
+    , m_drunk(false)
     , m_attackRange(1)
+    , m_chained(false)
     , m_headGeneral(nullptr)
     , m_deputyGeneral(nullptr)
     , m_headGeneralShown(false)
@@ -91,19 +92,6 @@ void Player::setAlive(bool alive)
 {
     m_alive = alive;
     emit aliveChanged();
-}
-
-bool Player::hasSkill(const EventHandler *skill) const
-{
-    Q_UNUSED(skill)
-    return false;
-}
-
-bool Player::hasShownSkill(const EventHandler *skill) const
-{
-    //@todo:
-    C_UNUSED(skill);
-    return false;
 }
 
 void Player::setRemoved(bool removed)
@@ -290,10 +278,10 @@ void Player::addCardHistory(const QString &name, int times)
         m_cardHistory[name] = times;
 }
 
-void Player::setDrank(bool drank)
+void Player::setDrunk(bool drunk)
 {
-    m_drank = drank;
-    emit drankChanged();
+    m_drunk = drunk;
+    emit drunkChanged();
 }
 
 void Player::setKingdom(const QString &kingdom)
@@ -312,4 +300,48 @@ void Player::setAttackRange(int range)
 {
     m_attackRange = range;
     emit attackRangeChanged();
+}
+
+void Player::setChained(bool chained)
+{
+    m_chained = chained;
+    emit chainedChanged();
+}
+
+void Player::setDying(bool dying)
+{
+    m_dying = dying;
+    emit dyingChanged();
+}
+
+
+bool Player::hasSkill(const Skill *skill) const
+{
+    if (m_headSkills.contains(skill))
+        return true;
+    if (m_deputySkills.contains(skill))
+        return true;
+    return m_acquiredSkills.contains(skill);
+}
+
+bool Player::hasShownSkill(const Skill *skill) const
+{
+    if (hasShownHeadGeneral()) {
+        if (m_headSkills.contains(skill))
+            return true;
+    }
+    if (hasShownDeputyGeneral()) {
+        if (m_deputySkills.contains(skill))
+            return true;
+    }
+    return m_acquiredSkills.contains(skill);
+}
+
+void Player::removeSkill(const Skill *skill)
+{
+    if (m_acquiredSkills.removeOne(skill))
+        return;
+    if (m_headSkills.removeOne(skill))
+        return;
+    m_deputySkills.removeOne(skill);
 }

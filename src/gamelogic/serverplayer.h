@@ -20,8 +20,6 @@
 #ifndef SERVERPLAYER_H
 #define SERVERPLAYER_H
 
-#include <QPointer>
-
 #include "event.h"
 #include "player.h"
 #include "structs.h"
@@ -29,6 +27,7 @@
 class CRoom;
 class CServerAgent;
 class GameLogic;
+class Skill;
 
 class ServerPlayer : public Player
 {
@@ -45,28 +44,54 @@ public:
 
     ServerPlayer *next() const { return qobject_cast<ServerPlayer *>(Player::next()); }
     ServerPlayer *next(bool ignoreRemoved) const{ return qobject_cast<ServerPlayer *>(Player::next(ignoreRemoved)); }
-    ServerPlayer *nextAlive(int step = 1, bool ignoreRemoved = true) const{ return qobject_cast<ServerPlayer *>(Player::nextAlive(step, ignoreRemoved)); }
+    ServerPlayer *nextAlive(int step = 1, bool ignoreRemoved = true) const { return qobject_cast<ServerPlayer *>(Player::nextAlive(step, ignoreRemoved)); }
 
     void drawCards(int n);
+    void recastCard(Card *card);
+
+    void showCard(Card *card);
+    void showCards(const QList<Card *> &cards);
+
     void play();
     void play(const QList<Phase> &phases);
     void activate(CardUseStruct &use);
 
-    Event askForTriggerOrder(const QString &reason, QList<Event> &options, bool cancelable);
-    Card *askForCard(const QString &pattern, const QString &prompt);
+    void skipPhase(Phase phase) { m_skippedPhase.insert(phase); }
+    bool isPhaseSkipped(Phase phase) { return m_skippedPhase.contains(phase); }
+    void clearSkippedPhase() { m_skippedPhase.clear(); }
+
+    void showPrompt(const QString &message, int number);
+    void showPrompt(const QString &message, const Card *card = nullptr);
+    void showPrompt(const QString &message, const ServerPlayer *p1, const Card *card = nullptr);
+    void showPrompt(const QString &message, const ServerPlayer *p1, const ServerPlayer *p2, const Card *card = nullptr);
+    void showPrompt(const QString &message, const QVariantList &args = QVariantList());
+
+    Event askForTriggerOrder(const QString &reason, const EventList &options, bool cancelable);
+    Card *askForCard(const QString &pattern, bool optional = true);
+    QList<Card *> askForCards(const QString &pattern, int num, bool optional = false);
+    QList<Card *> askForCards(const QString &pattern, int minNum, int maxNum, bool optional = false);
+    Card *askToChooseCard(ServerPlayer *owner, const QString &areaFlag = "hej", bool handcardVisible = false);
+    Card *askToUseCard(const QString &pattern, const QList<ServerPlayer *> &assignedTargets);
+    bool askToInvokeSkill(const Skill *skill, const QVariant &data);
 
     void broadcastProperty(const char *name) const;
     void broadcastProperty(const char *name, const QVariant &value, ServerPlayer *except = nullptr) const;
-    void notifyPropertyTo(const char *name, ServerPlayer *player);
+    void unicastPropertyTo(const char *name, ServerPlayer *player);
 
     void addCardHistory(const QString &name, int times = 1);
     void clearCardHistory();
 
+    void addHeadSkill(const Skill *skill);
+    void addDeputySkill(const Skill *skill);
+    void addAcquiredSkill(const Skill *skill);
+
 private:
+    void addTriggerSkill(const Skill *skill);
+
     GameLogic *m_logic;
     CRoom *m_room;
-    QPointer<CServerAgent> m_agent;
-    CardArea *m_handcards;
+    CServerAgent *m_agent;
+    QSet<Phase> m_skippedPhase;
 };
 
 #endif // SERVERPLAYER_H

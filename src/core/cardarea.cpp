@@ -17,6 +17,7 @@
     Mogara
 *********************************************************************/
 
+#include "card.h"
 #include "cardarea.h"
 
 CardArea::CardArea(CardArea::Type type, Player *owner, const QString &name)
@@ -29,7 +30,7 @@ CardArea::CardArea(CardArea::Type type, Player *owner, const QString &name)
 bool CardArea::add(Card *card, Direction direction) {
     if (m_cards.contains(card))
         return false;
-    if (direction == Bottom)
+    if (direction == Top)
         m_cards.prepend(card);
     else
         m_cards.append(card);
@@ -44,7 +45,7 @@ bool CardArea::add(const QList<Card *> &cards, Direction direction)
     foreach (Card *card, cards) {
         if (m_cards.contains(card))
             continue;
-        if (direction == Bottom)
+        if (direction == Top)
             m_cards.prepend(card);
         else
             m_cards.append(card);
@@ -79,6 +80,24 @@ bool CardArea::remove(const QList<Card *> &cards)
     return num - cards.length() == length();
 }
 
+Card *CardArea::findCard(uint id) const
+{
+    foreach (Card *card, m_cards) {
+        if (card->id() == id)
+            return card;
+    }
+    return nullptr;
+}
+
+Card *CardArea::rand() const
+{
+    if (m_cards.isEmpty())
+        return nullptr;
+
+    int index = qrand() % m_cards.length();
+    return m_cards.at(index);
+}
+
 QList<Card *> CardArea::takeFirst(int n)
 {
     QList<Card *> cards = m_cards.mid(0, n);
@@ -97,6 +116,22 @@ bool CardArea::contains(const Card *card) const
 {
     foreach (const Card *c, m_cards)
         if (c == card)
+            return true;
+    return false;
+}
+
+bool CardArea::contains(uint id) const
+{
+    foreach (const Card *card, m_cards)
+        if (card->id() == id)
+            return true;
+    return false;
+}
+
+bool CardArea::contains(const char *className) const
+{
+    foreach (const Card *card, m_cards)
+        if (card->inherits(className))
             return true;
     return false;
 }

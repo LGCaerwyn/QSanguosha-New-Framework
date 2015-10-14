@@ -14,7 +14,13 @@ Item {
     property alias maxHp: hpBar.maxValue
     property alias hp: hpBar.value
     property alias handcardArea: handcardAreaItem
+    property alias equipArea: equipAreaItem
+    property alias delayedTrickArea: delayedTrickAreaItem
     property string phase: "inactive"
+    property bool chained: false
+    property bool dying: false
+    property bool alive: true
+    property bool drunk: false
     property alias progressBar: progressBarItem
     property int seat: 0
     property bool selectable: false
@@ -66,16 +72,6 @@ Item {
     ]
     state: "normal"
 
-    ImageProvider {
-        id: photoImage
-        providerId: "photo"
-
-        function imagePath(imageId, requestedSize)
-        {
-            return "image/photo/" + imageId + ".png";
-        }
-    }
-
     RectangularGlow {
         id: outerGlow
         anchors.fill: parent
@@ -92,7 +88,7 @@ Item {
         Image {
             anchors.fill: parent
             fillMode: Image.PreserveAspectCrop
-            source: "image://general/fullphoto/" + (headGeneral != "" ? headGeneral : "blank")
+            source: "image://root/general/fullphoto/" + (headGeneral != "" ? headGeneral : "blank")
         }
     }
 
@@ -104,31 +100,45 @@ Item {
         Image {
             anchors.fill: parent
             fillMode: Image.PreserveAspectCrop
-            source: deputyGeneral != "" ? "image://general/fullphoto/" + deputyGeneral : ""
+            source: deputyGeneral != "" ? "image://root/general/fullphoto/" + deputyGeneral : ""
         }
     }
 
+    Rectangle {
+        color: Qt.rgba(250, 0, 0, 0.45)
+        anchors.fill: parent
+        visible: parent.drunk
+    }
+
     Image {
-        source: "image://photo/circle-photo"
+        source: "image://root/photo/circle-photo"
         visible: deputyGeneral != ""
     }
 
     Image {
         id: faceTurnedCover
         anchors.fill: parent
-        source: "image://photo/faceturned"
+        source: "image://root/photo/faceturned"
         visible: false
     }
 
     Image {
         anchors.fill: parent
-        source: "image://photo/photo-back"
+        source: "image://root/photo/photo-back"
+    }
+
+    SimpleEquipArea {
+        id: equipAreaItem
+
+        width: parent.width - Device.gu(20)
+        height: Device.gu(60)
+        y: parent.height - height
     }
 
     HandcardNumber {
         id: handcardNumItem
         x: Device.gu(-10)
-        y: Device.gu(110)
+        y: Device.gu(102)
         kingdom: parent.userRole
         value: handcardArea.length
     }
@@ -169,7 +179,11 @@ Item {
         id: screenNameItem
         color: "white"
         font.pixelSize: Device.gu(12)
-        x: Device.gu(5)
+        anchors.left: parent.left
+        anchors.leftMargin: Device.gu(20)
+        anchors.right: parent.right
+        anchors.rightMargin: Device.gu(35)
+        horizontalAlignment: Text.AlignHCenter
         y: Device.gu(3)
     }
 
@@ -210,6 +224,24 @@ Item {
         glow.samples: 24
     }
 
+    Image {
+        source: "image://root/chain"
+        anchors.centerIn: parent
+        visible: parent.chained
+    }
+
+    Image {
+        source: "image://root/photo/save-me"
+        anchors.centerIn: parent
+        visible: parent.dying
+    }
+
+    DelayedTrickArea {
+        id: delayedTrickAreaItem
+        columns: 1
+        x: -Device.gu(15)
+    }
+
     RoleComboBox {
         x: parent.width - width - Device.gu(5)
         y: Device.gu(1)
@@ -232,13 +264,21 @@ Item {
         visible: root.phase != "inactive"
     }
 
+    Colorize {
+        anchors.fill: parent
+        source: parent
+        hue: 0
+        saturation: 0
+        lightness: 0
+        visible: !parent.alive
+    }
+
     MouseArea {
         anchors.fill: parent
         onClicked: {
             if (parent.state != "candidate" || !parent.selectable)
                 return;
             parent.selected = !parent.selected;
-            roomScene.photoSelected(roomScene.getSelectedSeats());
         }
     }
 
@@ -253,5 +293,25 @@ Item {
     InvisibleCardArea {
         id: handcardAreaItem
         anchors.centerIn: parent
+    }
+
+    InvisibleCardArea {
+        id: defaultArea
+        anchors.centerIn: parent
+    }
+
+    function add(inputs)
+    {
+        defaultArea.add(inputs);
+    }
+
+    function remove(outputs)
+    {
+        return defaultArea.remove(outputs);
+    }
+
+    function updateCardPosition(animated)
+    {
+        defaultArea.updateCardPosition(animated);
     }
 }

@@ -65,6 +65,8 @@ StartGameDialog {
                 font.pixelSize: Device.gu(20)
                 width: Device.gu(50)
                 height: Device.gu(22)
+
+                Component.onCompleted: forceActiveFocus();
             }
 
             Rectangle {

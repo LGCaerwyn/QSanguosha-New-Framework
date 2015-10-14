@@ -34,15 +34,17 @@ class RoomScene : public QQuickItem
 public:
     RoomScene(QQuickItem *parent = 0);
 
-signals:
-    //Signals from QML to C++
-    void chooseGeneralFinished(const QString &head, const QString &deputy);
-    void cardSelected(const QVariantList &cardIds);
-    void photoSelected(const QVariantList &seats);
-    void accepted();
-    void rejected();
-    void finished();
+    //From QML to C++
+    Q_INVOKABLE void onChooseGeneralFinished(const QString &head, const QString &deputy);
+    Q_INVOKABLE void onCardSelected(const QVariantList &cardIds);
+    Q_INVOKABLE void onPhotoSelected(const QVariantList &seats);
+    Q_INVOKABLE void onAccepted();
+    Q_INVOKABLE void onRejected();
+    Q_INVOKABLE void onFinished();
+    Q_INVOKABLE void onAmazingGraceTaken(uint cid);
+    Q_INVOKABLE void onPlayerCardSelected(uint cid);
 
+signals:
     //Signals from C++ to QML
     void moveCards(const QVariant &moves);
     void enableCards(const QVariant &cardIds);
@@ -52,9 +54,14 @@ signals:
     void playAudio(const QString &path);
     void showIndicatorLine(int from, const QVariantList &tos);
     void showPrompt(const QString &prompt);
+    void hidePrompt();
     void setAcceptEnabled(bool enabled);
     void setRejectEnabled(bool enabled);
     void setFinishEnabled(bool enabled);
+    void askToChooseCards(const QVariant &cards);
+    void clearPopupBox();
+    void askToChoosePlayerCard(const QVariant &handcards, const QVariant &equips, const QVariant &delayedTricks);
+    void showCard(int fromSeat, const QVariant &cards);
 
 private:
     enum RespondingState
@@ -64,26 +71,35 @@ private:
         RespondingCardState
     };
 
-    void animateCardsMoving(const QList<CardsMoveStruct> &moves);
+    void checkTargetFeasibility();
+    void resetDashboard();
+    void enableCards(const QString &pattern);
+    void enableCards(const QList<const Card *> &cards);
 
     void onSeatArranged();
     void onChooseGeneralRequested(const QStringList &candidates);
-    void onChooseGeneralFinished(const QString &head, const QString &deputy);
-    void onUsingCard(const QString &pattern);
-    void onCardSelected(const QVariantList &cardIds);
-    void onPhotoSelected(const QVariantList &seats);
-    void onAccepted();
-    void onRejected();
-    void onFinished();
+    void onCardsMoved(const QList<CardsMoveStruct> &moves);
+    void onUsingCard(const QString &pattern = QString(), const QList<const Player *> &assignedTargets = QList<const Player *>());
     void onDamageDone(const ClientPlayer *victim, DamageStruct::Nature nature, int damage);
     void onRecoverDone(const ClientPlayer *from, const ClientPlayer *to, int num);
     void onCardUsed(const ClientPlayer *from, const QList<const ClientPlayer *> &tos);
-    void onCardAsked(const QString &pattern, const QString &prompt);
+    void onCardAsked(const QString &pattern);
+    void onCardsAsked(const QString &pattern, int minNum, int maxNum, bool optional);
+    void onAmazingGraceStarted();
+    void onChoosePlayerCardRequested(const QList<Card *> &handcards, const QList<Card *> &equips, const QList<Card *> &delayedTricks);
+    void onCardShown(const ClientPlayer *from, const QList<const Card *> &cards);
+
+    QVariantMap convertToMap(const Card *card) const;
 
     Client *m_client;
     QList<const Card *> m_selectedCard;
     QList<const Player *> m_selectedPlayer;
     RespondingState m_respondingState;
+    int m_minRespondingCardNum;
+    int m_maxRespondingCardNum;
+    bool m_respondingOptional;
+    QString m_respondingPattern;
+    QList<const Player *> m_assignedTargets;
 };
 
 #endif // ROOMSCENE_H

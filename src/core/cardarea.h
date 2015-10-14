@@ -57,6 +57,10 @@ public:
     bool add(const QList<Card *> &cards, Direction direction = UndefinedDirection);
     bool remove(Card *card);
     bool remove(const QList<Card *> &cards);
+    void clear() { m_cards.clear(); }
+
+    Card *findCard(uint id) const;
+    Card *rand() const;
 
     Card *first() const { return m_cards.first(); }
     Card *takeFirst() { return m_cards.takeFirst(); }
@@ -71,6 +75,8 @@ public:
     QList<Card *> takeLast(int n);
 
     bool contains(const Card *card) const;
+    bool contains(uint id) const;
+    bool contains(const char *className) const;
 
     QList<Card *> &cards() { return m_cards; }
     QList<Card *> cards() const { return m_cards; }
